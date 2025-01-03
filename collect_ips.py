@@ -7,7 +7,7 @@ import os
 urls = [
     'https://ip.164746.xyz/ipTop10.html',
     'https://cf.090227.xyz',
-    '104.18.71.192',
+    'https://www.wetest.vip/api/cf2dns/get_cloudflare_ip',
     'https://vps789.com/public/sum/cfIpApi',
     'https://www.wetest.vip/page/cloudflare/address_v4.html',
     'https://api.uouin.com/cloudflare.html',
