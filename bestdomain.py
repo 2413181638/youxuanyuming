@@ -63,7 +63,8 @@ if __name__ == "__main__":
         'xiaoqi111': 'https://ipdb.030101.xyz/api/bestcf.txt',  # #域名一，bestcf.域名.com
         'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/ip.txt', #域名二，api.域名.com
         'xiaoqi222': 'https://addressesapi.090227.xyz/CloudFlareYes',
-        'xiaoqi333': 'https://addressesapi.090227.xyz/ip.164746.xyz'
+        'xiaoqi333': 'https://addressesapi.090227.xyz/ip.164746.xyz',
+        'xiaoqi444': 'https://raw.githubusercontent.com/jc-lw/youxuanyuming/refs/heads/main/ip.txt'
         
         # 添加更多子域名和对应的IP列表URL
     }
