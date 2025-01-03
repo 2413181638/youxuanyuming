@@ -60,8 +60,11 @@ if __name__ == "__main__":
     
     # 示例URL和子域名对应的IP列表
     subdomain_ip_mapping = {
-        'xiaoqi': 'https://ipdb.030101.xyz/api/bestcf.txt',  # #域名一，bestcf.域名.com
+        'xiaoqi666': 'https://ipdb.030101.xyz/api/bestcf.txt',  # #域名一，bestcf.域名.com
         'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/ip.txt', #域名二，api.域名.com
+        'xiaoqi666': 'https://addressesapi.090227.xyz/CloudFlareYes',
+        'xiaoqi666': 'https://addressesapi.090227.xyz/ip.164746.xyz',#
+        
         # 添加更多子域名和对应的IP列表URL
     }
     
