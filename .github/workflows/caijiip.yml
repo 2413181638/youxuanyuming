@@ -2,40 +2,45 @@ name: Update IP List
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 每隔三十分钟运行一次
-  workflow_dispatch:  # 手动触发
- # push: # 允许提交触发
+    - cron: '*/10 * * * *'  # 每10分钟运行一次
+  workflow_dispatch:  # 支持手动触发
+  push:  # 如果需要推送触发，可以取消注释并配置条件
 
 jobs:
-
   update-ip-list:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v3
-      
+      name: Checkout code  # 检出代码
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
-        
+        python-version: '3.9'  # 使用Python 3.9，你可以根据需要选择版本
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install requests
         pip install beautifulsoup4
-        
-    - name: Run script
-      run: python ${{ github.workspace }}/collect_ips.py
-        
+
+    - name: Run script to collect IPs with timeout
+      run: |
+        # 设置一个超时时间，防止脚本一直运行
+        timeout 600 python ${{ github.workspace }}/collect_ips.py  # 设置超时时间为 10 分钟（600 秒）
+
     - name: Commit and push changes
       run: |
-        git config --global user.email "baolw50@gmail.com"
-        git config --global user.name "jc-lw"
-        if [ -n "$(git status --porcelain)" ]; then
-          git add ip.txt
-          git commit -m "Automatic update"
-          git push
+        git config --global user.email "2413181638@qq.com"  # 配置邮箱
+        git config --global user.name "2413181638"  # 配置用户名
+        git config --global pull.rebase true  # 配置 pull 使用 rebase
+        if [ -n "$(git status --porcelain)" ]; then  # 如果有更改
+          git add ip.txt  # 添加修改的文件
+          git commit -m "Automatic update"  # 提交
+          git fetch origin main  # 拉取远程仓库的最新内容
+          git merge origin/main --strategy=recursive --strategy-option=theirs  # 使用 'theirs' 策略解决冲突，自动保留远程仓库的内容
+          git push  # 推送到远程仓库
         else
-          echo "No changes detected, skipping commit."
+          echo "No changes detected, skipping commit."  # 如果没有更改，跳过提交
         fi
