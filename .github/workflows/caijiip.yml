@@ -2,7 +2,7 @@ name: Update IP List
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # 每10分钟运行一次
+    - cron: '*/15 * * * *'  # 每10分钟运行一次
   workflow_dispatch:  # 支持手动触发
   push:  # 如果需要推送触发，可以取消注释并配置条件
 
