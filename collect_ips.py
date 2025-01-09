@@ -1,12 +1,13 @@
 import requests
-import re
 from bs4 import BeautifulSoup
-import ipaddress
+import re
+import os
+import ipaddress  # 用于验证IP地址有效性
 from concurrent.futures import ThreadPoolExecutor
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# 目标URL列表（存入ip.txt）
+# 目标URL列表
 urls = [
     'https://cf.090227.xyz',
     'https://ip.164746.xyz/ipTop10.html',
@@ -14,6 +15,7 @@ urls = [
     'https://www.wetest.vip/api/cf2dns/get_cloudflare_ip',
     'https://vps789.com/public/sum/cfIpApi',
     'https://github.com/ymyuuu/IPDB/blob/main/bestcf.txt',
+    'https://raw.githubusercontent.com/jc-lw/youxuanyuming/refs/heads/main/ip.txt',
     'https://ipdb.030101.xyz/api/bestcf.txt',
     'https://www.wetest.vip/page/cloudflare/address_v4.html',
     'https://api.uouin.com/cloudflare.html',
@@ -21,15 +23,15 @@ urls = [
     'https://cf.vvhan.com/'
 ]
 
-# 指定链接（存入ips.txt）
-ips_file_url = 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/ips.txt'
-
-# 正则表达式用于匹配IP地址
+# 正则表达式用于匹配IP地址，包括类似 "172.67.195.213#CM-Default" 的结构
 ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
 
+# 检查ip.txt文件是否存在, 如果存在则删除它
+if os.path.exists('ip.txt'):
+    os.remove('ip.txt')
+
 # 创建一个集合来存储去重后的IP地址
-ip_set = set()  # 存储ip.txt的IP
-ips_set = set()  # 存储ips.txt的IP
+unique_ips = set()
 
 # 私有IP地址段
 private_ip_ranges = [
@@ -60,8 +62,8 @@ def setup_session():
     session.mount('https://', adapter)
     return session
 
-def fetch_ips(url, session, target_set):
-    """从指定URL提取IP地址"""
+def fetch_ips(url, session):
+    """从指定URL提取IP地址，每个URL最多提取前20个IP地址"""
     ip_matches = []
     try:
         print(f"正在请求 {url} ...")
@@ -106,12 +108,12 @@ def fetch_ips(url, session, target_set):
             except Exception as json_error:
                 print(f"解析JSON时出错: {json_error}")
 
-        # 将有效的IP添加到指定的集合中，集合会自动去重
-        for ip in ip_matches:
+        # 将有效的IP添加到集合中，集合会自动去重
+        for ip in ip_matches[:20]:  # 限制每个URL最多提取20个IP
             if is_valid_ip(ip):
-                target_set.add(ip)
+                unique_ips.add(ip)
 
-        print(f"{url} 提取到 {len(ip_matches)} 个 IP")
+        print(f"{url} 提取到 {len(ip_matches[:20])} 个 IP")
 
     except requests.exceptions.RequestException as e:
         print(f"请求 {url} 时出错: {e}")
@@ -124,23 +126,14 @@ def main():
 
     # 使用多线程并发请求
     with ThreadPoolExecutor(max_workers=5) as executor:
-        # 从指定的URL存储到ips.txt
-        executor.map(lambda url: fetch_ips(url, session, ips_set), [ips_file_url])
-        # 从其他URL存储到ip.txt
-        executor.map(lambda url: fetch_ips(url, session, ip_set), urls)
+        executor.map(lambda url: fetch_ips(url, session), urls)
 
-    # 将所有的IP地址存入ip.txt文件
-    with open('ip.txt', 'w') as ip_file:
-        for ip in ip_set:
-            ip_file.write(ip + '\n')
+    # 将去重后的IP写入文件
+    with open('ip.txt', 'w') as file:
+        for ip in unique_ips:
+            file.write(ip + '\n')
 
-    # 将所有的IP地址存入ips.txt文件
-    with open('ips.txt', 'w') as ips_file:
-        for ip in ips_set:
-            ips_file.write(ip + '\n')
-
-    print(f'所有IP地址已去重并保存到ip.txt文件中，去重后的IP数量：{len(ip_set)}')
-    print(f'所有IP地址已去重并保存到ips.txt文件中，去重后的IP数量：{len(ips_set)}')
+    print(f'所有IP地址已去重并保存到ip.txt文件中，去重后的IP数量：{len(unique_ips)}')
 
 if __name__ == "__main__":
     main()
