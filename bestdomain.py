@@ -134,13 +134,14 @@ if __name__ == "__main__":
     # 示例URL和子域名对应的IP列表
     subdomain_ip_mapping = {
         '443ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/443ip.txt',
-        '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/80ip.txt',
+        
         'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/ip.txt', #域名二，api.域名.com
         'nodie': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/nodie.txt',
         'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/cfip.txt',
         'bestcf': 'https://ipdb.030101.xyz/api/bestcf.txt',  # #域名一，bestcf.域名.com
         'xiaoqi222': 'https://addressesapi.090227.xyz/CloudFlareYes',  # 非txt文件
         'xiaoqi333': 'https://ip.164746.xyz/ipTop10.html',  # 非txt文件
+        '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/80ip.txt',
         # 添加更多子域名和对应的IP列表URL
     }
 
