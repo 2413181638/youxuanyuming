@@ -15,7 +15,6 @@ urls = [
     'https://www.wetest.vip/api/cf2dns/get_cloudflare_ip',
     'https://vps789.com/public/sum/cfIpApi',
     'https://github.com/ymyuuu/IPDB/blob/main/bestcf.txt',
-
     'https://ipdb.030101.xyz/api/bestcf.txt',
     'https://www.wetest.vip/page/cloudflare/address_v4.html',
     'https://api.uouin.com/cloudflare.html',
