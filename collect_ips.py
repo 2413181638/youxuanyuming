@@ -7,7 +7,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 
-# 目标URL列表
+# 目标URL列表，用于获取IP地址并存入ip.txt
 urls = [
     'https://cf.090227.xyz',
     'https://ip.164746.xyz/ipTop10.html',
@@ -22,11 +22,15 @@ urls = [
     'https://cf.vvhan.com/'
 ]
 
-# 下载的文件 URL
-ips_file_url = 'https://raw.githubusercontent.com/jc-lw/youxuanyuming/refs/heads/main/ip.txt'
+# 要下载的ips.txt文件 URL
+ips_file_url = 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/ips.txt'
 
 # 正则表达式用于匹配IP地址，包括类似 "172.67.195.213#CM-Default" 的结构
 ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+
+# 检查ip.txt文件是否存在, 如果存在则删除它
+if os.path.exists('ip.txt'):
+    os.remove('ip.txt')
 
 # 检查ips.txt文件是否存在, 如果存在则删除它
 if os.path.exists('ips.txt'):
@@ -101,15 +105,6 @@ def fetch_ips(url, session):
                 element_text = element.get_text()
                 ip_matches.extend(re.findall(ip_pattern, element_text))
 
-        # 尝试从JSON结构中提取IP地址
-        if response.headers.get('Content-Type', '').startswith('application/json'):
-            print(f"{url} 返回JSON，尝试解析")
-            try:
-                json_ips = re.findall(ip_pattern, response.text)
-                ip_matches.extend(json_ips)
-            except Exception as json_error:
-                print(f"解析JSON时出错: {json_error}")
-
         # 将有效的IP添加到集合中，集合会自动去重
         for ip in ip_matches:
             if is_valid_ip(ip):
@@ -129,26 +124,21 @@ def download_ips_file(url):
         response = requests.get(url, timeout=20)  # 设置超时为20秒
         response.raise_for_status()  # 检查请求是否成功
 
-        # 如果文件已存在，先删除
-        if os.path.exists('ips.txt'):
-            os.remove('ips.txt')
-
         # 保存到根目录下的 ips.txt 文件
         with open('ips.txt', 'w') as file:
             file.write(response.text)
         print("ips.txt 文件下载成功！")
-
     except requests.exceptions.RequestException as e:
         print(f"下载 {url} 时出错: {e}")
 
 def main():
-    # 下载 ips.txt 文件
+    # 下载并保存 ips.txt 文件
     download_ips_file(ips_file_url)
 
     # 设置会话，包含超时和重试机制
     session = setup_session()
 
-    # 使用多线程并发请求
+    # 使用多线程并发请求，处理URL列表
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(lambda url: fetch_ips(url, session), urls)
 
