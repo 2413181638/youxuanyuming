@@ -9,7 +9,7 @@ from requests.exceptions import RequestException
 # 设置全局超时
 TIMEOUT = 10  # 设置请求超时时间为10秒
 
-# 每次处理DNS更新时最大IP数量
+# 总共处理的最大IP数量
 MAX_IP_COUNT = 200
 
 def get_ip_list(url):
@@ -94,53 +94,51 @@ def delete_existing_dns_records(api_token, zone_id, subdomain, domain):
             print(f"Error deleting DNS records for {record_name}: {e}")
             break
 
-def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, batch_size=10):
+def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain):
     headers = {
         'Authorization': f'Bearer {api_token}',
         'Content-Type': 'application/json',
     }
     record_name = domain if subdomain == '@' else f'{subdomain}.{domain}'
-    
-    # 确保总的IP数量不超过MAX_IP_COUNT
+
+    # 限制最大 IP 数量为 200
     ip_list = ip_list[:MAX_IP_COUNT]  # 限制处理的IP数量为MAX_IP_COUNT
-    
+
     # 批量处理IP，分批更新
-    for i in range(0, len(ip_list), batch_size):
-        batch_ips = ip_list[i:i + batch_size]
-        for ip in batch_ips:
-            data = {
-                "type": "A",
-                "name": record_name,
-                "content": ip,
-                "ttl": 1,
-                "proxied": False
-            }
-            try:
-                response = requests.post(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records', json=data, headers=headers, timeout=TIMEOUT)
-                print(f"Attempting to add A record for {record_name} with IP {ip}: {response.status_code} {response.text}")  # 调试输出
-                if response.status_code == 200:
-                    print(f"Add {subdomain}:{ip}")
-                else:
-                    print(f"Failed to add A record for IP {ip} to subdomain {subdomain}: {response.status_code} {response.text}")
-            except RequestException as e:
-                print(f"Error updating DNS record for {record_name} with IP {ip}: {e}")
-        # 每处理完一批 IP，等待几秒钟再进行下一批更新，避免请求过于频繁
-        time.sleep(5)
+    for ip in ip_list:
+        data = {
+            "type": "A",
+            "name": record_name,
+            "content": ip,
+            "ttl": 1,
+            "proxied": False
+        }
+        try:
+            response = requests.post(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records', json=data, headers=headers, timeout=TIMEOUT)
+            print(f"Attempting to add A record for {record_name} with IP {ip}: {response.status_code} {response.text}")  # 调试输出
+            if response.status_code == 200:
+                print(f"Add {subdomain}:{ip}")
+            else:
+                print(f"Failed to add A record for IP {ip} to subdomain {subdomain}: {response.status_code} {response.text}")
+        except RequestException as e:
+            print(f"Error updating DNS record for {record_name} with IP {ip}: {e}")
+        # 每处理完一个 IP，等待几秒钟再进行下一个更新，避免请求过于频繁
+        time.sleep(1)
 
 if __name__ == "__main__":
     api_token = os.getenv('CF_API_TOKEN')
     
     # 示例URL和子域名对应的IP列表
     subdomain_ip_mapping = {
+        '443ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/443ip.txt',
         'bestcf': 'https://ipdb.030101.xyz/api/bestcf.txt',  # #域名一，bestcf.域名.com
+        'nodie': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/nodie.txt',
         'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/ip.txt', #域名二，api.域名.com
+        '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/80ip.txt',         
+        'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/cfip.txt',        
         'xiaoqi222': 'https://addressesapi.090227.xyz/CloudFlareYes',  # 非txt文件
         'xiaoqi333': 'https://ip.164746.xyz/ipTop10.html',  # 非txt文件
-        'xiaoqi444': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/ip.txt',
-        '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/80ip.txt',
-        '443ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/443ip.txt',
-        'nodie': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/nodie.txt',
-        'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/cfip.txt',
+
         # 添加更多子域名和对应的IP列表URL
     }
     
@@ -151,18 +149,30 @@ if __name__ == "__main__":
         if zone_id is None or domain is None:
             raise Exception("Cloudflare Zone retrieval failed")
 
+        all_ips = []  # 用于存储所有获取到的IP
+
+        # 获取所有IP列表并合并
         for subdomain, url in subdomain_ip_mapping.items():
             # 获取IP列表
             ip_list = get_ip_list(url)
             if not ip_list:
                 print(f"No IPs found for {subdomain}. Skipping DNS update.")
                 continue
+            all_ips.extend(ip_list)
 
+        # 限制总的IP数量为MAX_IP_COUNT
+        all_ips = list(set(all_ips))  # 去重
+        all_ips = all_ips[:MAX_IP_COUNT]  # 限制总IP数量为200
+
+        if not all_ips:
+            print("No valid IPs to update.")
+        else:
             # 删除现有的DNS记录
-            delete_existing_dns_records(api_token, zone_id, subdomain, domain)
+            for subdomain, _ in subdomain_ip_mapping.items():
+                delete_existing_dns_records(api_token, zone_id, subdomain, domain)
             
             # 更新Cloudflare DNS记录
-            update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain)
+            update_cloudflare_dns(all_ips, api_token, zone_id, subdomain, domain)
     
     except Exception as e:
         # 处理异常并输出错误信息
