@@ -77,21 +77,23 @@ def delete_existing_dns_records(api_token, zone_id, subdomain, domain):
         'Content-Type': 'application/json',
     }
     record_name = domain if subdomain == '@' else f'{subdomain}.{domain}'
-    while True:
-        try:
-            response = requests.get(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={record_name}', headers=headers, timeout=TIMEOUT)
-            response.raise_for_status()
-            print(f"Get DNS records for {record_name}: {response.status_code} {response.text}")  # 调试输出
-            records = response.json().get('result', [])
-            if not records:
-                break
-            for record in records:
-                delete_response = requests.delete(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record["id"]}', headers=headers, timeout=TIMEOUT)
-                delete_response.raise_for_status()
-                print(f"Del {subdomain}:{record['id']} - {delete_response.status_code} {delete_response.text}")  # 调试输出
-        except RequestException as e:
-            print(f"Error deleting DNS records for {record_name}: {e}")
-            break
+    try:
+        # 获取所有 A 记录并删除
+        response = requests.get(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={record_name}', headers=headers, timeout=TIMEOUT)
+        response.raise_for_status()
+        print(f"Get DNS records for {record_name}: {response.status_code} {response.text}")  # 调试输出
+        records = response.json().get('result', [])
+        if not records:
+            print(f"No existing DNS records for {record_name}, skipping delete.")
+            return
+        
+        # 删除所有现有的 DNS 记录
+        for record in records:
+            delete_response = requests.delete(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record["id"]}', headers=headers, timeout=TIMEOUT)
+            delete_response.raise_for_status()
+            print(f"Del {subdomain}:{record['id']} - {delete_response.status_code} {delete_response.text}")  # 调试输出
+    except RequestException as e:
+        print(f"Error deleting DNS records for {record_name}: {e}")
 
 def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain):
     headers = {
@@ -167,11 +169,11 @@ if __name__ == "__main__":
         if not all_ips:
             print("No valid IPs to update.")
         else:
-            # 删除现有的DNS记录
+            # 先删除现有的DNS记录
             for subdomain, _ in subdomain_ip_mapping.items():
                 delete_existing_dns_records(api_token, zone_id, subdomain, domain)
             
-            # 更新Cloudflare DNS记录
+            # 再更新Cloudflare DNS记录
             for subdomain, _ in subdomain_ip_mapping.items():
                 update_cloudflare_dns(all_ips, api_token, zone_id, subdomain, domain)
     
