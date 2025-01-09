@@ -23,6 +23,9 @@ urls = [
     'https://cf.vvhan.com/'
 ]
 
+# 下载的文件 URL
+ips_file_url = 'https://raw.githubusercontent.com/jc-lw/youxuanyuming/refs/heads/main/ip.txt'
+
 # 正则表达式用于匹配IP地址，包括类似 "172.67.195.213#CM-Default" 的结构
 ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
 
@@ -120,7 +123,24 @@ def fetch_ips(url, session):
     except Exception as e:
         print(f"解析 {url} 时出错: {e}")
 
+def download_ips_file(url):
+    """下载并保存 ips.txt 文件"""
+    try:
+        print(f"正在下载 {url} ...")
+        response = requests.get(url, timeout=20)  # 设置超时为20秒
+        response.raise_for_status()  # 检查请求是否成功
+
+        # 保存到根目录下的 ips.txt 文件
+        with open('ips.txt', 'w') as file:
+            file.write(response.text)
+        print("ips.txt 文件下载成功！")
+    except requests.exceptions.RequestException as e:
+        print(f"下载 {url} 时出错: {e}")
+
 def main():
+    # 下载 ips.txt 文件
+    download_ips_file(ips_file_url)
+
     # 设置会话，包含超时和重试机制
     session = setup_session()
 
