@@ -2,7 +2,6 @@ import os
 import re
 import time
 import requests
-from lxml import etree
 from bs4 import BeautifulSoup
 from requests.exceptions import RequestException
 
@@ -104,7 +103,7 @@ def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain):
     # 限制最大 IP 数量为 200
     ip_list = ip_list[:MAX_IP_COUNT]  # 限制处理的IP数量为MAX_IP_COUNT
 
-    # 批量处理IP，分批更新
+    # 批量处理IP，按顺序更新
     for ip in ip_list:
         data = {
             "type": "A",
@@ -122,7 +121,8 @@ def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain):
                 print(f"Failed to add A record for IP {ip} to subdomain {subdomain}: {response.status_code} {response.text}")
         except RequestException as e:
             print(f"Error updating DNS record for {record_name} with IP {ip}: {e}")
-        # 每处理完一个 IP，等待几秒钟再进行下一个更新，避免请求过于频繁
+        
+        # 每处理完一个 IP，等待1秒再进行下一个更新
         time.sleep(1)
 
 if __name__ == "__main__":
@@ -172,7 +172,8 @@ if __name__ == "__main__":
                 delete_existing_dns_records(api_token, zone_id, subdomain, domain)
             
             # 更新Cloudflare DNS记录
-            update_cloudflare_dns(all_ips, api_token, zone_id, subdomain, domain)
+            for subdomain, _ in subdomain_ip_mapping.items():
+                update_cloudflare_dns(all_ips, api_token, zone_id, subdomain, domain)
     
     except Exception as e:
         # 处理异常并输出错误信息
