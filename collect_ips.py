@@ -147,7 +147,7 @@ def main():
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(lambda url: fetch_ips(url, session), urls)
 
-    # 将去重后的IP写入文件
+    # 将去重后的IP写入 ip.txt 文件
     with open('ip.txt', 'w') as file:
         for ip in unique_ips:
             file.write(ip + '\n')
