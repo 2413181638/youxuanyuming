@@ -1,17 +1,12 @@
 # github项目
 - 原github作者[ tianshipapa ](https://github.com/tianshipapa)和
-[ymyuuu ]（https://github.com/ymyuuu/BestDomain）
+[ymyuuu](https://github.com/ymyuuu/BestDomain)
 - 老王只是合并两个项目
 - github项目地址
-## 优选域名 ， IP 取决于抓取的 网站
-- bestcf.cfcs.us.kg 
-- api.cfcs.us.kg
-
-![image.png](https://img.lwxpz.me/file/1736315762020_image.png)
 
 https://github.com/jc-lw/youxuanyuming
 
-![image.png](https://rin.vcrr.us.kg/images/18b0be4bca205491b1aaf70983319fe504bef426.png )
+![image.png](https://rin.vcrr.us.kg/images/18b0be4bca205491b1aaf70983319fe504bef426.png)
 
 
 
@@ -30,16 +25,15 @@ https://github.com/jc-lw/youxuanyuming
 # BestDomain 需要Cloudflare API令牌
 
 - 这里修改你的二级域名开头
-![ image.png](https://rin.vcrr.us.kg/images/85362a2f5680355d4d73a2293ce82099c42e3308.png)
-![ image.png ]( https://rin.vcrr.us.kg/images/5def5f757d7a63978358e5a950714bed3dc6c213.png )
+![image.png](https://rin.vcrr.us.kg/images/85362a2f5680355d4d73a2293ce82099c42e3308.png)
+![image.png](https://rin.vcrr.us.kg/images/5def5f757d7a63978358e5a950714bed3dc6c213.png)
 - 把上面的链接 修改成 你自己的链接，因为你抓取优选ip可能跟我不一样。
-- 
-![image.png]( https://rin.vcrr.us.kg/images/52f07d0b88279fb13694e1071d3184082408cf3d.png )
+![image.png](https://rin.vcrr.us.kg/images/52f07d0b88279fb13694e1071d3184082408cf3d.png)
 
 
 
 1. 创建 Cloudflare API 令牌
-访问[ Cloudflare API 令牌] ( https://dash.cloudflare.com/profile/api-tokens )
+访问 [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens)
 
 2. 选择需要解析的域名，创建编辑 DNS 权限的` CF_API_TOKEN`
 ![image.png](https://rin.vcrr.us.kg/images/35feefcde1ed0cc08e430e419de73b892157d35c.png)
