@@ -9,6 +9,9 @@ from requests.exceptions import RequestException
 # 设置全局超时
 TIMEOUT = 10  # 设置请求超时时间为10秒
 
+# 每次处理DNS更新时最大IP数量
+MAX_IP_COUNT = 200
+
 def get_ip_list(url):
     # 检查URL是否是txt文件
     if url.endswith('.txt'):
@@ -97,6 +100,9 @@ def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, batch_
         'Content-Type': 'application/json',
     }
     record_name = domain if subdomain == '@' else f'{subdomain}.{domain}'
+    
+    # 确保总的IP数量不超过MAX_IP_COUNT
+    ip_list = ip_list[:MAX_IP_COUNT]  # 限制处理的IP数量为MAX_IP_COUNT
     
     # 批量处理IP，分批更新
     for i in range(0, len(ip_list), batch_size):
