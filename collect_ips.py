@@ -1,11 +1,11 @@
 import requests
-from bs4 import BeautifulSoup
-import re
 import os
+import re
 import ipaddress  # 用于验证IP地址有效性
 from concurrent.futures import ThreadPoolExecutor
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from bs4 import BeautifulSoup
 
 # 目标URL列表
 urls = [
@@ -129,10 +129,15 @@ def download_ips_file(url):
         response = requests.get(url, timeout=20)  # 设置超时为20秒
         response.raise_for_status()  # 检查请求是否成功
 
+        # 如果文件已存在，先删除
+        if os.path.exists('ips.txt'):
+            os.remove('ips.txt')
+
         # 保存到根目录下的 ips.txt 文件
         with open('ips.txt', 'w') as file:
             file.write(response.text)
         print("ips.txt 文件下载成功！")
+
     except requests.exceptions.RequestException as e:
         print(f"下载 {url} 时出错: {e}")
 
