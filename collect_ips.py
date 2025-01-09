@@ -28,9 +28,9 @@ ips_file_url = 'https://raw.githubusercontent.com/jc-lw/youxuanyuming/refs/heads
 # 正则表达式用于匹配IP地址，包括类似 "172.67.195.213#CM-Default" 的结构
 ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
 
-# 检查ip.txt文件是否存在, 如果存在则删除它
-if os.path.exists('ip.txt'):
-    os.remove('ip.txt')
+# 检查ips.txt文件是否存在, 如果存在则删除它
+if os.path.exists('ips.txt'):
+    os.remove('ips.txt')
 
 # 创建一个集合来存储去重后的IP地址
 unique_ips = set()
