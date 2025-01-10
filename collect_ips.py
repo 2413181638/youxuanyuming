@@ -9,8 +9,6 @@ from urllib3.util.retry import Retry
 import time
 import random
 import logging
-import subprocess
-import sys
 
 # 配置日志
 logging.basicConfig(
@@ -37,7 +35,7 @@ urls = [
     'https://cf.vvhan.com/'
 ]
 
-# 正则表达式用于匹配IP地址，包括类似 "172.67.195.213#CM-Default" 的结构
+# 正则表达式用于匹配IP地址
 ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
 
 # 检查ip.txt文件是否存在, 如果存在则删除它
@@ -141,111 +139,7 @@ def fetch_ips(url, session):
     except Exception as e:
         logging.error(f"解析 {url} 时出错: {e}")
 
-def git_pull():
-    """
-    执行 git pull 操作，以确保本地仓库与远程仓库同步。
-    使用 --rebase 选项以避免产生额外的合并提交。
-    """
-    try:
-        logging.info("正在执行 git pull --rebase...")
-        result = subprocess.run(['git', 'pull', '--rebase'], check=True, capture_output=True, text=True)
-        logging.info(result.stdout)
-    except subprocess.CalledProcessError as e:
-        logging.error(f"git pull 失败: {e.stderr}")
-        raise
-
-def git_push():
-    """
-    执行 git push 操作。
-    """
-    try:
-        logging.info("正在执行 git push...")
-        result = subprocess.run(['git', 'push'], check=True, capture_output=True, text=True)
-        logging.info(result.stdout)
-    except subprocess.CalledProcessError as e:
-        logging.error(f"git push 失败: {e.stderr}")
-        raise
-
-def git_commit_push():
-    """
-    执行 git commit 和 git push 操作。
-    """
-    try:
-        # 添加文件到暂存区
-        subprocess.run(['git', 'add', 'ip.txt'], check=True, capture_output=True, text=True)
-        logging.info("已添加 ip.txt 到暂存区。")
-
-        # 提交更改
-        commit_message = 'Automatic update'
-        subprocess.run(['git', 'commit', '-m', commit_message], check=True, capture_output=True, text=True)
-        logging.info(f"已提交更改: {commit_message}")
-
-        # 推送更改
-        git_push()
-
-    except subprocess.CalledProcessError as e:
-        # 如果没有更改需要提交，git commit 会失败，此时忽略
-        if 'nothing to commit' in e.stderr.lower():
-            logging.info("没有检测到更改，跳过提交和推送。")
-        else:
-            logging.error(f"git commit 或 push 失败: {e.stderr}")
-            raise
-
-def configure_git():
-    """
-    配置 Git 用户信息。
-    """
-    try:
-        git_user_email = os.getenv('GIT_USER_EMAIL')
-        git_user_name = os.getenv('GIT_USER_NAME')
-
-        if not git_user_email or not git_user_name:
-            logging.error("环境变量 GIT_USER_EMAIL 和 GIT_USER_NAME 未设置。")
-            sys.exit(1)
-
-        subprocess.run(['git', 'config', '--global', 'user.email', git_user_email], check=True, capture_output=True, text=True)
-        subprocess.run(['git', 'config', '--global', 'user.name', git_user_name], check=True, capture_output=True, text=True)
-        logging.info("已配置 Git 用户信息。")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"配置 Git 用户信息失败: {e.stderr}")
-        raise
-
-def configure_git_remote():
-    """
-    配置 Git 远程仓库 URL，包含认证信息。
-    使用环境变量 GIT_AUTH_TOKEN 来进行认证。
-    """
-    try:
-        git_auth_token = os.getenv('GIT_AUTH_TOKEN')
-        git_repo_url = os.getenv('GIT_REPO_URL')  # 完整的远程仓库URL，例如 https://github.com/username/repo.git
-
-        if not git_auth_token or not git_repo_url:
-            logging.error("环境变量 GIT_AUTH_TOKEN 和 GIT_REPO_URL 未设置。")
-            sys.exit(1)
-
-        # 构建带有令牌的远程URL
-        # 例如：https://<token>@github.com/username/repo.git
-        parsed_url = re.match(r'https://github\.com/(.+)', git_repo_url)
-        if not parsed_url:
-            logging.error("GIT_REPO_URL 格式不正确。应为 https://github.com/username/repo.git")
-            sys.exit(1)
-        
-        authenticated_url = f'https://{git_auth_token}@github.com/{parsed_url.group(1)}'
-
-        # 设置远程仓库URL
-        subprocess.run(['git', 'remote', 'set-url', 'origin', authenticated_url], check=True, capture_output=True, text=True)
-        logging.info("已配置带有认证信息的远程仓库URL。")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"配置远程仓库URL失败: {e.stderr}")
-        raise
-
 def main():
-    # 配置 Git 用户信息
-    configure_git()
-
-    # 配置 Git 远程仓库URL（带认证）
-    configure_git_remote()
-
     # 设置会话，包含超时和重试机制
     session = setup_session()
 
@@ -271,14 +165,6 @@ def main():
             file.write(ip + '\n')
 
     logging.info(f'所有IP地址已去重并保存到ip.txt文件中，去重后的IP数量：{len(unique_ips)}')
-
-    try:
-        # 执行 Git 操作
-        git_pull()   # 首先拉取远程更改
-        git_commit_push()   # 添加、提交并推送更改
-    except Exception as e:
-        logging.error(f"Git 操作失败: {e}")
-        sys.exit(1)
 
 if __name__ == "__main__":
     main()
