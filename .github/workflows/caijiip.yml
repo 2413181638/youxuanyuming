@@ -3,7 +3,7 @@ name: Update IP List
 on:
   schedule:
     - cron: '*/15 * * * *'  # 每15分钟运行一次
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:        # 支持手动触发
 
 jobs:
   update-ip-list:
@@ -31,27 +31,17 @@ jobs:
     # 4. 运行抓取 IP 的脚本
     - name: Run script to collect IPs with timeout
       run: |
-        # 设置一个超时时间，防止脚本一直运行
         timeout 600 python ${{ github.workspace }}/collect_ips.py  # 设置超时时间为 10 分钟（600 秒）
 
-    # 5. 配置 Git 用户信息
-    - name: Configure Git
-      run: |
-        git config --global user.email "2413181638@qq.com"
-        git config --global user.name "2413181638"
-
-    # 6. 拉取远程更改，避免推送冲突
-    - name: Pull latest changes
-      run: |
-        git pull --rebase origin main
-
-    # 7. 检查是否有更改并提交
+    # 5. Commit and push changes using EndBug/add-and-commit@v9
     - name: Commit and push changes
-      run: |
-        if [ -n "$(git status --porcelain)" ]; then
-          git add ip.txt
-          git commit -m "Automatic update"
-          git push origin main
-        else
-          echo "No changes detected, skipping commit."
-        fi
+      uses: EndBug/add-and-commit@v9
+      with:
+        author_name: "2413181638"
+        author_email: "2413181638@qq.com"
+        message: "Automatic update"
+        add: "ip.txt"
+        # 如果默认分支是 main，则无需指定
+        # branch: "main"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
