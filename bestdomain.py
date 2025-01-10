@@ -9,16 +9,68 @@ from requests.exceptions import RequestException
 # 设置全局超时
 TIMEOUT = 10  # 设置请求超时时间为10秒
 
+def request_with_retry(method, url, headers=None, json=None, params=None, data=None, timeout=10, max_retries=3, initial_delay=2):
+    """
+    封装requests的调用，增加重试和延时逻辑，避免被API限频。
+    :param method: 请求方法，如 'GET', 'POST', 'DELETE' 等
+    :param url: 请求URL
+    :param headers: 请求头
+    :param json: JSON数据体（可选）
+    :param params: URL参数（可选）
+    :param data: 表单数据（可选）
+    :param timeout: 超时时间（秒）
+    :param max_retries: 最大重试次数
+    :param initial_delay: 初始等待时长，后续可指数退避
+    :return: requests.Response 或抛出异常
+    """
+    delay = initial_delay
+    for attempt in range(1, max_retries + 1):
+        try:
+            if method.upper() == 'GET':
+                response = requests.get(url, headers=headers, params=params, timeout=timeout)
+            elif method.upper() == 'POST':
+                response = requests.post(url, headers=headers, json=json, data=data, timeout=timeout)
+            elif method.upper() == 'DELETE':
+                response = requests.delete(url, headers=headers, timeout=timeout)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+
+            # 如果触发 Cloudflare 429，休眠后重试
+            if response.status_code == 429:
+                print(f"[{attempt}/{max_retries}] HTTP 429 Too Many Requests. Sleeping {delay} seconds before retry...")
+                time.sleep(delay)
+                # 指数退避
+                delay *= 2
+                continue
+
+            # 其他非200状态码，也需检查
+            response.raise_for_status()
+            return response
+
+        except RequestException as e:
+            # 可以根据需要，对不同的错误进行区分处理
+            print(f"[{attempt}/{max_retries}] Request failed: {e}. Sleeping {delay} seconds before retry...")
+            time.sleep(delay)
+            delay *= 2
+
+    # 超过最大重试次数，依旧失败
+    raise Exception(f"Request to {url} failed after {max_retries} retries.")
+
 def get_ip_list(url):
     # 检查URL是否是txt文件
     if url.endswith('.txt'):
         try:
-            response = requests.get(url, timeout=TIMEOUT)
-            response.raise_for_status()
+            response = request_with_retry(
+                method='GET',
+                url=url,
+                timeout=TIMEOUT,
+                max_retries=3,         # 可自定义
+                initial_delay=2        # 可自定义
+            )
             ip_list = response.text.strip().split('\n')
             print(f"IP list from {url}: {ip_list}")  # 调试输出
             return ip_list
-        except RequestException as e:
+        except Exception as e:
             print(f"Error fetching IP list from {url}: {e}")
             return []
     else:
@@ -28,9 +80,13 @@ def get_ip_list(url):
 
 def parse_html_for_ips(url):
     try:
-        response = requests.get(url, timeout=TIMEOUT)
-        response.raise_for_status()
-
+        response = request_with_retry(
+            method='GET',
+            url=url,
+            timeout=TIMEOUT,
+            max_retries=3,
+            initial_delay=2
+        )
         # 尝试用BeautifulSoup解析HTML内容
         soup = BeautifulSoup(response.text, 'html.parser')
         ip_list = []
@@ -48,7 +104,7 @@ def parse_html_for_ips(url):
         else:
             print(f"No valid IP addresses found in {url}.")
             return []
-    except RequestException as e:
+    except Exception as e:
         print(f"Error fetching or parsing HTML from {url}: {e}")
         return []
 
@@ -58,14 +114,20 @@ def get_cloudflare_zone(api_token):
         'Content-Type': 'application/json',
     }
     try:
-        response = requests.get('https://api.cloudflare.com/client/v4/zones', headers=headers, timeout=TIMEOUT)
-        response.raise_for_status()
+        response = request_with_retry(
+            method='GET',
+            url='https://api.cloudflare.com/client/v4/zones',
+            headers=headers,
+            timeout=TIMEOUT,
+            max_retries=3,
+            initial_delay=2
+        )
         zones = response.json().get('result', [])
         print(f"Zones: {zones}")  # 打印返回的所有 Zones，检查是否有你需要的 Zone
         if not zones:
             raise Exception("No zones found")
         return zones[0]['id'], zones[0]['name']
-    except RequestException as e:
+    except Exception as e:
         print(f"Error fetching Cloudflare zones: {e}")
         return None, None
 
@@ -75,10 +137,17 @@ def delete_existing_dns_records(api_token, zone_id, subdomain, domain):
         'Content-Type': 'application/json',
     }
     record_name = domain if subdomain == '@' else f'{subdomain}.{domain}'
+
     while True:
         try:
-            response = requests.get(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={record_name}', headers=headers, timeout=TIMEOUT)
-            response.raise_for_status()
+            response = request_with_retry(
+                method='GET',
+                url=f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={record_name}',
+                headers=headers,
+                timeout=TIMEOUT,
+                max_retries=3,
+                initial_delay=2
+            )
             print(f"Get DNS records for {record_name}: {response.status_code} {response.text}")  # 调试输出
             records = response.json().get('result', [])
 
@@ -86,11 +155,17 @@ def delete_existing_dns_records(api_token, zone_id, subdomain, domain):
                 break
 
             for record in records:
-                delete_response = requests.delete(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record["id"]}', headers=headers, timeout=TIMEOUT)
-                delete_response.raise_for_status()
+                delete_response = request_with_retry(
+                    method='DELETE',
+                    url=f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record["id"]}',
+                    headers=headers,
+                    timeout=TIMEOUT,
+                    max_retries=3,
+                    initial_delay=2
+                )
                 print(f"Del {subdomain}:{record['id']} - {delete_response.status_code} {delete_response.text}")  # 调试输出
 
-        except RequestException as e:
+        except Exception as e:
             print(f"Error deleting DNS records for {record_name}: {e}")
             break
 
@@ -115,14 +190,22 @@ def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, batch_
             }
 
             try:
-                response = requests.post(f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records', json=data, headers=headers, timeout=TIMEOUT)
+                response = request_with_retry(
+                    method='POST',
+                    url=f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records',
+                    headers=headers,
+                    json=data,
+                    timeout=TIMEOUT,
+                    max_retries=3,
+                    initial_delay=2
+                )
                 print(f"Attempting to add A record for {record_name} with IP {ip}: {response.status_code} {response.text}")  # 调试输出
                 if response.status_code == 200:
                     print(f"Add {subdomain}:{ip}")
                 else:
                     print(f"Failed to add A record for IP {ip} to subdomain {subdomain}: {response.status_code} {response.text}")
 
-            except RequestException as e:
+            except Exception as e:
                 print(f"Error updating DNS record for {record_name} with IP {ip}: {e}")
 
         # 每处理完一批 IP，等待几秒钟再进行下一批更新，避免请求过于频繁
