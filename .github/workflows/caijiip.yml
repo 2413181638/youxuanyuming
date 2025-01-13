@@ -9,39 +9,43 @@ jobs:
   update-ip-list:
     runs-on: ubuntu-latest
 
+    # 添加并发控制，确保同一时间只有一个实例在运行
+    concurrency:
+      group: update-ip-list
+      cancel-in-progress: true  # 如果有新的工作流运行，取消之前正在运行的
+
     steps:
-    # 1. 检出代码
-    - uses: actions/checkout@v3
-      name: Checkout code
-      with:
-        fetch-depth: 0  # 确保获取完整的 Git 历史，以便进行 pull 操作
+      # 1. 检出代码
+      - uses: actions/checkout@v3
+        name: Checkout code
+        with:
+          fetch-depth: 0  # 确保获取完整的 Git 历史，以便进行 pull 操作
 
-    # 2. 设置 Python 环境
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'  # 您可以根据需要选择其他版本
+      # 2. 设置 Python 环境
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'  # 您可以根据需要选择其他版本
 
-    # 3. 安装依赖
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests beautifulsoup4 lxml
+      # 3. 安装依赖
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 lxml
 
-    # 4. 运行抓取 IP 的脚本
-    - name: Run script to collect IPs with timeout
-      run: |
-        timeout 600 python ${{ github.workspace }}/collect_ips.py  # 设置超时时间为 10 分钟（600 秒）
+      # 4. 运行抓取 IP 的脚本
+      - name: Run script to collect IPs with timeout
+        run: |
+          timeout 600 python ${{ github.workspace }}/collect_ips.py  # 设置超时时间为 10 分钟（600 秒）
 
-    # 5. Commit and push changes using EndBug/add-and-commit@v9
-    - name: Commit and push changes
-      uses: EndBug/add-and-commit@v9
-      with:
-        author_name: "2413181638"
-        author_email: "2413181638@qq.com"
-        message: "Automatic update"
-        add: "ip.txt"
-        # 如果默认分支是 main，则无需指定
-        # branch: "main"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 5. Commit and push changes using EndBug/add-and-commit@v9
+      - name: Commit and push changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          author_name: "2413181638"
+          author_email: "2413181638@qq.com"
+          message: "Automatic update"
+          add: "ip.txt"
+          pull_before_push: true  # 在推送前拉取远程更改
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
