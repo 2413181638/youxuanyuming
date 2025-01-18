@@ -223,3 +223,12 @@ if __name__ == "__main__":
             raise Exception("Cloudflare Zone retrieval failed")
 
         for subdomain, url in subdomain_ip_mapping.items():
+            ip_list = get_ip_list(url)  # Make sure this line is indented
+            if ip_list:
+                print(f"Updating DNS records for {subdomain}.{domain}...")
+                delete_existing_dns_records(api_token, zone_id, subdomain, domain)
+                update_cloudflare_dns_threaded(ip_list, api_token, zone_id, subdomain, domain)
+            else:
+                print(f"No IPs found for {subdomain}.{domain} from {url}")
+    except Exception as e:
+        print(f"Error: {e}")
