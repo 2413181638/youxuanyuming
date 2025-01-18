@@ -2,14 +2,13 @@ name: Update IP List
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # 每15分钟运行一次
-  workflow_dispatch:        # 支持手动触发
+    - cron: '*/15 * * * *'  # 每 15 分钟运行一次
+  workflow_dispatch:        # 手动触发
 
 jobs:
   update-ip-list:
     runs-on: ubuntu-latest
 
-    # 添加并发控制，确保同一时间只有一个实例在运行
     concurrency:
       group: update-ip-list
       cancel-in-progress: true  # 如果有新的工作流运行，取消之前正在运行的
@@ -25,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'  # 您可以根据需要选择其他版本
+          python-version: '3.9'
 
       # 3. 安装依赖
       - name: Install dependencies
@@ -33,19 +32,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 lxml
 
-      # 4. 运行抓取 IP 的脚本
+      # 4. 运行抓取 IP 的脚本（设置超时时间 10 分钟）
       - name: Run script to collect IPs with timeout
         run: |
-          timeout 600 python ${{ github.workspace }}/collect_ips.py  # 设置超时时间为 10 分钟（600 秒）
+          timeout 600 python ${{ github.workspace }}/collect_ips.py
 
-      # 5. Commit and push changes using EndBug/add-and-commit@v9
+      # 5. Commit and push changes
       - name: Commit and push changes
         uses: EndBug/add-and-commit@v9
         with:
-          author_name: "2413181638"
-          author_email: "2413181638@qq.com"
-          message: "Automatic update"
           add: "ip.txt"
-          pull_before_push: true  # 在推送前拉取远程更改
+          pull_before_push: true
+          # 使用 Secrets 里定义的私密参数
+          author_name: ${{ secrets.COMMIT_AUTHOR_NAME }}
+          author_email: ${{ secrets.COMMIT_AUTHOR_EMAIL }}
+          message: "Automatic update"
         env:
+          # 如果需要使用外部的个人令牌，可以在 Secrets 里设置一个 PAT_TOKEN 并在此替换
+          # 例如： GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+          # 如果只在本仓库内推送，则可直接使用下面的 GITHUB_TOKEN
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
