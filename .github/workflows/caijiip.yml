@@ -47,13 +47,17 @@ jobs:
       - name: Pull latest changes and handle merge conflicts
         run: |
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git pull origin main --rebase --strategy-option=theirs
+          git fetch origin main  # 获取远程最新更改
+          git reset --soft origin/main  # 软重置到最新的远程提交
+          git pull --rebase origin main || echo "Pull failed, attempting merge..."
+          git merge origin/main || echo "Merge conflict detected, trying automatic resolution"
 
       # 7. 添加、提交和推送更新
       - name: Commit and push changes
         run: |
           git add ip.txt
           git commit -m "Automatic update" || echo "No changes to commit"
-          git push origin main
+          git push origin main --force-with-lease || echo "Push failed, retrying with rebase..."
+          git pull --rebase origin main && git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
