@@ -43,10 +43,11 @@ jobs:
           git config --global user.name "${{ secrets.COMMIT_AUTHOR_NAME }}"
           git config --global user.email "${{ secrets.COMMIT_AUTHOR_EMAIL }}"
 
-      # 6. 拉取最新代码并进行 rebase，防止非快进错误
-      - name: Pull latest changes
+      # 6. 拉取最新代码并处理可能的合并冲突
+      - name: Pull latest changes and handle merge conflicts
         run: |
-          git pull --rebase origin main || true
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git pull origin main --rebase --strategy-option=theirs
 
       # 7. 添加、提交和推送更新
       - name: Commit and push changes
