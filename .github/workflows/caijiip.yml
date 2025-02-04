@@ -43,7 +43,13 @@ jobs:
           git config --global user.name "${{ secrets.COMMIT_AUTHOR_NAME }}"
           git config --global user.email "${{ secrets.COMMIT_AUTHOR_EMAIL }}"
 
-      # 6. 拉取最新代码并处理可能的合并冲突
+      # 6. 处理未提交的更改
+      - name: Stash unstaged changes
+        run: |
+          git add .
+          git stash
+
+      # 7. 拉取最新代码并处理可能的合并冲突
       - name: Pull latest changes and handle merge conflicts
         run: |
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
@@ -52,7 +58,12 @@ jobs:
           git pull --rebase origin main || echo "Pull failed, attempting merge..."
           git merge origin/main || echo "Merge conflict detected, trying automatic resolution"
 
-      # 7. 添加、提交和推送更新
+      # 8. 还原暂存的更改
+      - name: Restore stashed changes
+        run: |
+          git stash pop || echo "No stashed changes to apply"
+
+      # 9. 添加、提交和推送更新
       - name: Commit and push changes
         run: |
           git add ip.txt
