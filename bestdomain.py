@@ -1,234 +1,169 @@
 import os
 import re
 import time
+import asyncio
 import requests
 import threading
+import concurrent.futures
 from lxml import etree
 from bs4 import BeautifulSoup
-from requests.exceptions import RequestException
+from requests.exceptions import RequestException, Timeout
 
-# 设置全局超时
-TIMEOUT = 10  # 设置请求超时时间为10秒
-MAX_TIMEOUT = 180  # 最大超时时间，3分钟
-MAX_RETRIES = 3  # 最大重试次数
-MAX_THREADS = 20  # 最大并发线程数
+# 全局超时 & 并发配置
+TIMEOUT = 10  # 单次请求超时时间
+MAX_RETRIES = 3  # 请求重试次数
+MAX_THREADS = 10  # 最大并发线程数
+MAX_SCRIPT_RUNTIME = 300  # 最大脚本运行时间（秒）
 
-def request_with_retry(method, url, headers=None, json=None, params=None, data=None, timeout=TIMEOUT, max_retries=MAX_RETRIES, initial_delay=2):
+# 记录脚本启动时间
+script_start_time = time.time()
+
+
+def is_timeout():
+    """检查脚本是否超时"""
+    return time.time() - script_start_time > MAX_SCRIPT_RUNTIME
+
+
+def request_with_retry(method, url, headers=None, json=None, params=None, data=None, timeout=TIMEOUT, max_retries=MAX_RETRIES):
     """
-    封装requests的调用，增加重试和延时逻辑，避免被API限频。
-    :param method: 请求方法，如 'GET', 'POST', 'DELETE' 等
-    :param url: 请求URL
-    :param headers: 请求头
-    :param json: JSON数据体（可选）
-    :param params: URL参数（可选）
-    :param data: 表单数据（可选）
-    :param timeout: 超时时间（秒）
-    :param max_retries: 最大重试次数
-    :param initial_delay: 初始等待时长，后续可指数退避
-    :return: requests.Response 或抛出异常
+    进行 HTTP 请求，并支持重试机制。
     """
-    delay = initial_delay
-    for attempt in range(1, max_retries + 1):
+    delay = 2  # 指数退避初始延迟
+    for attempt in range(max_retries):
+        if is_timeout():
+            raise Exception("Script execution timeout")
+
         try:
-            if method.upper() == 'GET':
-                response = requests.get(url, headers=headers, params=params, timeout=timeout)
-            elif method.upper() == 'POST':
-                response = requests.post(url, headers=headers, json=json, data=data, timeout=timeout)
-            elif method.upper() == 'DELETE':
-                response = requests.delete(url, headers=headers, timeout=timeout)
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
+            response = requests.request(method, url, headers=headers, json=json, params=params, data=data, timeout=timeout)
 
-            # 如果触发 Cloudflare 429，休眠后重试
+            # 检查是否触发 Cloudflare 429 限制
             if response.status_code == 429:
-                print(f"[{attempt}/{max_retries}] HTTP 429 Too Many Requests. Sleeping {delay} seconds before retry...")
+                print(f"[{attempt + 1}/{max_retries}] HTTP 429 Too Many Requests. Sleeping {delay} sec...")
                 time.sleep(delay)
-                # 指数退避
                 delay *= 2
                 continue
 
-            # 其他非200状态码，也需检查
             response.raise_for_status()
             return response
-
-        except RequestException as e:
-            # 可以根据需要，对不同的错误进行区分处理
-            print(f"[{attempt}/{max_retries}] Request failed: {e}. Sleeping {delay} seconds before retry...")
+        except (RequestException, Timeout) as e:
+            print(f"[{attempt + 1}/{max_retries}] Request failed: {e}. Retrying after {delay} sec...")
             time.sleep(delay)
             delay *= 2
 
-    # 超过最大重试次数，依旧失败
     raise Exception(f"Request to {url} failed after {max_retries} retries.")
 
+
 def get_ip_list(url):
-    if url.endswith('.txt'):
-        try:
-            response = request_with_retry(
-                method='GET',
-                url=url,
-                timeout=TIMEOUT,
-                max_retries=3,         # 可自定义
-                initial_delay=2        # 可自定义
-            )
-            ip_list = response.text.strip().split('\n')
-            return ip_list
-        except Exception as e:
-            print(f"Error fetching IP list from {url}: {e}")
-            return []
-    else:
-        return parse_html_for_ips(url)
-
-def parse_html_for_ips(url):
+    """
+    根据 URL 获取 IP 列表，支持 .txt 文件和 HTML 页面解析。
+    """
     try:
-        response = request_with_retry(
-            method='GET',
-            url=url,
-            timeout=TIMEOUT,
-            max_retries=3,
-            initial_delay=2
-        )
+        response = request_with_retry('GET', url)
+        if url.endswith('.txt'):
+            return response.text.strip().split('\n')
+
         soup = BeautifulSoup(response.text, 'html.parser')
-        ip_list = []
+        return [item.get_text().strip() for item in soup.find_all('a', href=True) if re.match(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', item.get_text().strip())]
 
-        for item in soup.find_all('a', href=True):
-            ip = item.get_text().strip()
-            if re.match(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', ip):
-                ip_list.append(ip)
-
-        if ip_list:
-            return ip_list
-        else:
-            return []
     except Exception as e:
-        print(f"Error fetching or parsing HTML from {url}: {e}")
+        print(f"Error fetching IPs from {url}: {e}")
         return []
 
-def update_cloudflare_dns_threaded(ip_list, api_token, zone_id, subdomain, domain):
-    headers = {
-        'Authorization': f'Bearer {api_token}',
-        'Content-Type': 'application/json',
-    }
-    record_name = domain if subdomain == '@' else f'{subdomain}.{domain}'
+
+def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain):
+    """
+    批量更新 Cloudflare DNS 记录，使用并发请求。
+    """
+    headers = {'Authorization': f'Bearer {api_token}', 'Content-Type': 'application/json'}
+    record_name = f"{subdomain}.{domain}" if subdomain != '@' else domain
 
     def add_dns_record(ip):
-        data = {
-            "type": "A",
-            "name": record_name,
-            "content": ip,
-            "ttl": 1,
-            "proxied": False
-        }
+        """
+        添加 A 记录
+        """
+        if is_timeout():
+            return
+        data = {"type": "A", "name": record_name, "content": ip, "ttl": 1, "proxied": False}
         try:
-            response = request_with_retry(
-                method='POST',
-                url=f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records',
-                headers=headers,
-                json=data,
-                timeout=TIMEOUT,
-                max_retries=3,
-                initial_delay=2
-            )
-            if response.status_code == 200:
-                print(f"Added A record for {record_name} with IP {ip}")
-            else:
-                print(f"Failed to add A record for IP {ip}: {response.status_code} {response.text}")
-
+            response = request_with_retry('POST', f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records', headers=headers, json=data)
+            print(f"Added {record_name} -> {ip}")
         except Exception as e:
-            print(f"Error adding A record for {record_name} with IP {ip}: {e}")
+            print(f"Failed to add {record_name} -> {ip}: {e}")
 
-    threads = []
-    for ip in ip_list:
-        thread = threading.Thread(target=add_dns_record, args=(ip,))
-        threads.append(thread)
-        thread.start()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        executor.map(add_dns_record, ip_list)
 
-    for thread in threads:
-        thread.join()  # 等待所有线程完成
 
 def get_cloudflare_zone(api_token):
-    headers = {
-        'Authorization': f'Bearer {api_token}',
-        'Content-Type': 'application/json',
-    }
+    """
+    获取 Cloudflare 域名的 Zone ID。
+    """
+    headers = {'Authorization': f'Bearer {api_token}', 'Content-Type': 'application/json'}
     try:
-        response = request_with_retry(
-            method='GET',
-            url='https://api.cloudflare.com/client/v4/zones',
-            headers=headers,
-            timeout=TIMEOUT,
-            max_retries=3,
-            initial_delay=2
-        )
+        response = request_with_retry('GET', 'https://api.cloudflare.com/client/v4/zones', headers=headers)
         zones = response.json().get('result', [])
-        if not zones:
-            raise Exception("No zones found")
-        return zones[0]['id'], zones[0]['name']
+        if zones:
+            return zones[0]['id'], zones[0]['name']
     except Exception as e:
         print(f"Error fetching Cloudflare zones: {e}")
-        return None, None
+    return None, None
+
 
 def delete_existing_dns_records(api_token, zone_id, subdomain, domain):
-    headers = {
-        'Authorization': f'Bearer {api_token}',
-        'Content-Type': 'application/json',
-    }
-    record_name = domain if subdomain == '@' else f'{subdomain}.{domain}'
+    """
+    批量删除 Cloudflare 现有 A 记录，减少 API 调用次数。
+    """
+    headers = {'Authorization': f'Bearer {api_token}', 'Content-Type': 'application/json'}
+    record_name = f"{subdomain}.{domain}" if subdomain != '@' else domain
 
-    while True:
-        try:
-            response = request_with_retry(
-                method='GET',
-                url=f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={record_name}',
-                headers=headers,
-                timeout=TIMEOUT,
-                max_retries=3,
-                initial_delay=2
-            )
-            records = response.json().get('result', [])
+    try:
+        response = request_with_retry('GET', f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={record_name}', headers=headers)
+        records = response.json().get('result', [])
 
-            if not records:
-                break
+        if not records:
+            return
 
-            for record in records:
-                delete_response = request_with_retry(
-                    method='DELETE',
-                    url=f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record["id"]}',
-                    headers=headers,
-                    timeout=TIMEOUT,
-                    max_retries=3,
-                    initial_delay=2
-                )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+            executor.map(lambda rec: request_with_retry('DELETE', f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{rec["id"]}', headers=headers), records)
 
-        except Exception as e:
-            print(f"Error deleting DNS records for {record_name}: {e}")
-            break
+        print(f"Deleted existing DNS records for {record_name}")
 
-if __name__ == "__main__":
+    except Exception as e:
+        print(f"Error deleting DNS records for {record_name}: {e}")
+
+
+async def main():
+    """
+    主函数，获取 IP 并更新 Cloudflare DNS。
+    """
     api_token = os.getenv('CF_API_TOKEN')
-
     subdomain_ip_mapping = {
-        '443ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/443ip.txt',
-        'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/ip.txt',
-        'nodie': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/nodie.txt',
-        'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/cfip.txt',
+        '443ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/443ip.txt',
+        'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/ip.txt',
+        'nodie': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/nodie.txt',
+        'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cfip.txt',
         'bestcf': 'https://ipdb.030101.xyz/api/bestcf.txt',
         'xiaoqi222': 'https://addressesapi.090227.xyz/CloudFlareYes',
         'xiaoqi333': 'https://ip.164746.xyz/ipTop10.html',
-        '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/refs/heads/main/80ip.txt',
+        '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/80ip.txt',
     }
 
-    try:
-        zone_id, domain = get_cloudflare_zone(api_token)
-        if not zone_id or not domain:
-            raise Exception("Cloudflare Zone retrieval failed")
+    zone_id, domain = get_cloudflare_zone(api_token)
+    if not zone_id or not domain:
+        print("Cloudflare Zone retrieval failed")
+        return
 
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         for subdomain, url in subdomain_ip_mapping.items():
-            ip_list = get_ip_list(url)  # Make sure this line is indented
+            if is_timeout():
+                break
+            ip_list = await asyncio.get_event_loop().run_in_executor(executor, get_ip_list, url)
             if ip_list:
-                print(f"Updating DNS records for {subdomain}.{domain}...")
                 delete_existing_dns_records(api_token, zone_id, subdomain, domain)
-                update_cloudflare_dns_threaded(ip_list, api_token, zone_id, subdomain, domain)
+                update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain)
             else:
                 print(f"No IPs found for {subdomain}.{domain} from {url}")
-    except Exception as e:
-        print(f"Error: {e}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
