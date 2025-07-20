@@ -141,6 +141,7 @@ async def main():
         '443ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/443ip.txt',
         'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/ip.txt',
         'nodie': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/nodie.txt',
+        'proxy': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/proxy.txt',
         'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cfip.txt',
         'bestcf': 'https://ipdb.030101.xyz/api/bestcf.txt',
         'xiaoqi222': 'https://addressesapi.090227.xyz/CloudFlareYes',
