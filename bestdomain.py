@@ -15,7 +15,7 @@ MAX_RETRIES = 3  # 请求重试次数
 MAX_THREADS = 10  # 最大并发线程数
 MAX_SCRIPT_RUNTIME = 300  # 最大脚本运行时间（秒）
 RATE_LIMIT_BATCH = 10  # 每批次处理 10 个请求
-RATE_LIMIT_DELAY = 1  # 每批次后暂停 1 秒
+RATE_LIMIT_DELAY = 1   # 每批次后暂停 1 秒
 
 # 记录脚本启动时间
 script_start_time = time.time()
@@ -59,34 +59,32 @@ def is_valid_ip(ip):
     ip_pattern = r'^\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b$'
     return bool(re.match(ip_pattern, ip))
 
-def get_ip_list(url):
+def get_ip_list(url, max_ips=20):
     """
-    根据 URL 获取 IP 列表，支持 .txt 文件和 HTML 页面解析。
+    根据 URL 获取 IP 列表，支持 .txt 文件和 HTML 页面解析。只保留前 max_ips 个 IP。
     """
     try:
         response = request_with_retry('GET', url)
+        ip_list = []
         if url.endswith('.txt'):
             # 处理纯文本文件，确保每行是有效 IP
             ip_list = [line.strip() for line in response.text.strip().split('\n') if is_valid_ip(line.strip())]
-            return ip_list
-
-        # 处理 HTML 页面
-        soup = BeautifulSoup(response.text, 'html.parser')
-        ip_list = []
-        # 提取所有文本中的 IP 地址
-        text = soup.get_text()
-        ip_list = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', text)
-        # 验证 IP 有效性
-        ip_list = [ip for ip in ip_list if is_valid_ip(ip)]
+        else:
+            # 处理 HTML 页面
+            soup = BeautifulSoup(response.text, 'html.parser')
+            text = soup.get_text()
+            ip_list = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', text)
+            ip_list = [ip for ip in ip_list if is_valid_ip(ip)]
+        # 截取前 max_ips 个
+        ip_list = ip_list[:max_ips]
         return ip_list
-
     except Exception as e:
         print(f"Error fetching IPs from {url}: {e}")
         return []
 
-def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain):
+def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, ttl=300):
     """
-    批量更新 Cloudflare DNS 记录，使用并发请求，并限制速率。
+    批量更新 Cloudflare DNS 记录，使用并发请求，并限制速率。ttl单位为秒（5分钟=300秒）。
     """
     headers = {'Authorization': f'Bearer {api_token}', 'Content-Type': 'application/json'}
     record_name = f"{subdomain}.{domain}" if subdomain != '@' else domain
@@ -100,7 +98,7 @@ def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain):
         if not is_valid_ip(ip):
             print(f"Skipping invalid IP for {record_name}: {ip}")
             return
-        data = {"type": "A", "name": record_name, "content": ip, "ttl": 1, "proxied": False}
+        data = {"type": "A", "name": record_name, "content": ip, "ttl": ttl, "proxied": False}
         try:
             response = request_with_retry('POST', f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records', headers=headers, json=data)
             print(f"Added {record_name} -> {ip}")
@@ -158,7 +156,7 @@ def delete_existing_dns_records(api_token, zone_id, subdomain, domain):
 
 async def main():
     """
-    主函数，获取 IP 并更新 Cloudflare DNS。
+    主函数，获取 IP 并更新 Cloudflare DNS，每个子域名只用前20个 IP，ttl=5分钟
     """
     api_token = os.getenv('CF_API_TOKEN')
     subdomain_ip_mapping = {
@@ -184,10 +182,11 @@ async def main():
         for subdomain, url in subdomain_ip_mapping.items():
             if is_timeout():
                 break
-            ip_list = await asyncio.get_event_loop().run_in_executor(executor, get_ip_list, url)
+            # 只取每个子域名前20个IP
+            ip_list = await asyncio.get_event_loop().run_in_executor(executor, get_ip_list, url, 20)
             if ip_list:
                 delete_existing_dns_records(api_token, zone_id, subdomain, domain)
-                update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain)
+                update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, ttl=300)
             else:
                 print(f"No IPs found for {subdomain}.{domain} from {url}")
 
