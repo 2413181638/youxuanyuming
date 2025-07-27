@@ -170,6 +170,9 @@ async def main():
         'bestcf': 'https://ipdb.030101.xyz/api/bestcf.txt',
         'cm': 'https://addressesapi.090227.xyz/CloudFlareYes',
         '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/80ip.txt',
+        'cmcc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cmcc.txt',
+        'cucc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cucc.txt',
+        'ctcc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/ctcc.txt',
     }
 
     zone_id, domain = get_cloudflare_zone(api_token)
