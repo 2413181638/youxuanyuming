@@ -160,14 +160,12 @@ async def main():
     """
     api_token = os.getenv('CF_API_TOKEN')
     subdomain_ip_mapping = {
-        '443ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/443ip.txt',
         'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/ip.txt',
         'nodie': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/nodie.txt',
         'proxy': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/proxy.txt',
         'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cfip.txt',
         #'bestcf': 'https://ipdb.030101.xyz/api/bestcf.txt',
         'cm': 'https://addressesapi.090227.xyz/CloudFlareYes',
-        '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/80ip.txt',
         'cmcc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cmcc.txt',
         'cucc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cucc.txt',
         'ctcc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/ctcc.txt',
