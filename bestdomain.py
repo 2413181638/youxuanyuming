@@ -164,7 +164,7 @@ async def main():
         'xiaoqi': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/ip.txt',
         'nodie': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/nodie.txt',
         'proxy': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/proxy.txt',
-        #'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cfip.txt',
+        'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cfip.txt',
         #'bestcf': 'https://ipdb.030101.xyz/api/bestcf.txt',
         'cm': 'https://addressesapi.090227.xyz/CloudFlareYes',
         '80ip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/80ip.txt',
