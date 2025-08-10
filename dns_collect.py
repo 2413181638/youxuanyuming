@@ -1,25 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-IPv4 采集脚本（多轮采样 + 200+ 公共 DNS）
+IPv4 采集脚本（深挖版：低速稳态 + 多轮采样 + 200+ 公共DNS）
 - 域名来源：优先 domains.txt（每行一个），否则用代码内 DOMAINS
-- 解析器来源：优先 dns_servers.txt（每行一个IPv4，建议>=200），否则用内置公共DNS兜底
+- 解析器来源：优先 dns_servers.txt（每行一个IPv4，建议>=200），否则用内置公共DNS
 - 策略：
-    * 对每个域名进行多轮采样（SAMPLES_PER_DOMAIN 轮）；
-    * 每轮先用系统 DNS（可重试），再用公共 DNS 池分波并发查询；
-    * 每轮“命中也继续”，把所有波次的结果**都聚合**；
-    * 多轮的结果累计汇总，最后写入 ips.txt
-- 异常：全部打印到日志（包含解析器IP/异常类型），但不影响整体流程
-- 写入：所有域名与轮次完成后，合并去重排序，一次性覆盖写入 ips.txt
+    * 每个域名进行多轮采样（SAMPLES_PER_DOMAIN 轮）；
+    * 每轮：系统DNS(可重试) -> 公共DNS池分波并发；命中也继续扫，聚合所有结果；
+    * 轮次/波次/单查询之间加入 sleep + 抖动，降低速率，避免限流/丢包；
+    * UDP 失败自动回退 TCP；EDNS payload 1232 降低分片；
+    * 解析器熔断：同一解析器在本次运行内多次失败则跳过；
+- 异常：全部打印到日志，不影响整体执行；
+- 写入：所有域名与轮次完成后，合并去重排序，一次性覆盖写入 ips.txt。
 """
 
 from __future__ import annotations
-import sys
-import os
-import ipaddress
-import random
+import sys, os, time, random, ipaddress
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Set, Dict
+from typing import List, Set
+from collections import defaultdict
 
 # 依赖：dnspython
 try:
@@ -29,7 +28,7 @@ except ModuleNotFoundError:
     print("缺少 dnspython，请先: pip install dnspython")
     sys.exit(0)  # 不把CI判失败
 
-# =============== 可调参数 ===============
+# =============== 可调参数（为“挖更多”调优过） ===============
 
 # 若不存在 domains.txt，就用这份内置列表
 DOMAINS: List[str] = [
@@ -45,7 +44,7 @@ DOMAINS: List[str] = [
     "freeyx.cloudflare88.eu.org",
 ]
 
-# 若不存在 dns_servers.txt，则使用这份兜底池（建议提供文件扩充到 200+）
+# 若不存在 dns_servers.txt，则用兜底池（建议提供文件扩充到 200+）
 BUILTIN_RESOLVERS = [
     # Cloudflare
     "1.1.1.1", "1.0.0.1",
@@ -65,9 +64,9 @@ BUILTIN_RESOLVERS = [
     "185.228.168.9", "185.228.169.9",
     # Yandex
     "77.88.8.8", "77.88.8.1",
-    # Level3 (历史常见)
+    # Level3(历史)
     "4.2.2.1", "4.2.2.2", "4.2.2.3", "4.2.2.4", "4.2.2.5", "4.2.2.6",
-    # 国内常见（可用性受环境影响）
+    # 国内常见（runner 可达性不稳定）
     "114.114.114.114", "114.114.115.115",
     "223.5.5.5", "223.6.6.6",
     "119.29.29.29",
@@ -75,18 +74,30 @@ BUILTIN_RESOLVERS = [
     "1.2.4.8", "210.2.4.8",
 ]
 
-# 多轮采样
-SAMPLES_PER_DOMAIN = 3         # 每个域名采样轮次（越大越全、越慢）
+# 多轮采样（轮次越多越全，但更久）
+SAMPLES_PER_DOMAIN = 5          # 每域名轮次 ↑
+WAVES_PER_ROUND = 8             # 每轮波次 ↑（每轮扫更多解析器）
+RESOLVERS_PER_WAVE = 12         # 每波解析器 ↓（降低瞬时并发）
+MAX_WAVES_PER_DOMAIN = 1000     # 总波数上限（安全阈）
 
-# 查询与并发参数
-PER_QUERY_TIMEOUT = 2.0        # 单次查询超时
-PER_QUERY_LIFETIME = 3.0       # 单次查询生命周期
-RETRIES_PER_RESOLVER = 2       # 每个解析器的重试次数
-SYSTEM_TRIES = 2               # 系统DNS尝试次数
-MAX_WORKERS = min(32, (os.cpu_count() or 2) * 4)
-RESOLVERS_PER_WAVE = 24        # 每波并发解析器数量
-WAVES_PER_ROUND = 5            # 每轮最多多少波（≈ 24*5=120 解析器/轮）
-MAX_WAVES_PER_DOMAIN = 1000    # 总波数上限（防止极端配置失控）
+# 速率控制（更稳）
+SLEEP_BETWEEN_WAVES = 0.8       # 波次间 sleep（秒）
+SLEEP_BETWEEN_ROUNDS = 2.0      # 轮次间 sleep（秒）
+JITTER_PER_QUERY = (0.05, 0.15) # 单查询前抖动(秒)区间，降低瞬时突刺
+
+# 查询与超时（略放宽）
+PER_QUERY_TIMEOUT = 3.5         # 单次查询超时
+PER_QUERY_LIFETIME = 4.5        # 单次查询生命周期
+RETRIES_PER_RESOLVER = 2        # 每解析器重试
+SYSTEM_TRIES = 2                 # 系统DNS尝试次数
+
+# 并发（整体下降）
+MAX_WORKERS = min(16, (os.cpu_count() or 2) * 2)
+
+# 解析器熔断/TCP回退/EDNS
+RESOLVER_FAIL_THRESHOLD = 3     # 同一解析器连续失败阈值（本次运行内）
+ENABLE_TCP_FALLBACK = True
+EDNS_PAYLOAD = 1232             # 降低UDP分片
 
 # 文件
 DOMAINS_FILE = Path("domains.txt")
@@ -94,10 +105,13 @@ RESOLVERS_FILE = Path("dns_servers.txt")
 IPS_FILE = Path("ips.txt")
 
 # 日志
-PRINT_VERBOSE_ERRORS = True    # 打印每个解析器的异常详情
+PRINT_VERBOSE_ERRORS = True
+
+# 解析器失败计数（本次运行）
+RESOLVER_FAIL_COUNT = defaultdict(int)
 
 
-# =============== 工具函数 ===============
+# ================= 工具函数 =================
 
 def load_lines(path: Path) -> List[str]:
     if not path.exists():
@@ -130,7 +144,7 @@ def load_resolvers() -> List[str]:
         except ValueError:
             if PRINT_VERBOSE_ERRORS:
                 print(f"[WARN] 跳过无效DNS地址: {ip}")
-    random.shuffle(valid)  # 打散避免总命中同一批
+    random.shuffle(valid)  # 打散
     return valid
 
 def is_ipv4(s: str) -> bool:
@@ -145,42 +159,57 @@ def make_resolver(use_system: bool, nameserver: str | None = None) -> dns.resolv
         r.nameservers = [nameserver]
     r.timeout = PER_QUERY_TIMEOUT
     r.lifetime = PER_QUERY_LIFETIME
+    try:
+        r.use_edns(edns=0, ednsflags=0, payload=EDNS_PAYLOAD)
+    except Exception:
+        pass
     return r
 
-def query_a_once(resolver: dns.resolver.Resolver, domain: str, tag: str) -> List[str]:
-    ips: List[str] = []
-    try:
-        answers = resolver.resolve(domain, "A", raise_on_no_answer=False)
+def query_a_once_with_tcp_fallback(resolver: dns.resolver.Resolver, domain: str, tag: str) -> List[str]:
+    """先 UDP，再视情况回退到 TCP。异常打印并返回空列表。"""
+    def _do_query(tcp: bool) -> List[str]:
+        time.sleep(random.uniform(*JITTER_PER_QUERY))  # 降速抖动
+        ips: List[str] = []
+        answers = resolver.resolve(domain, "A", raise_on_no_answer=False, tcp=tcp)
         if answers:
             for r in answers:
                 ip = getattr(r, "address", "")
                 if ip and is_ipv4(ip):
                     ips.append(ip)
-    except Exception as e:
+        return ips
+
+    try:
+        return _do_query(tcp=False)
+    except Exception as e1:
         if PRINT_VERBOSE_ERRORS:
-            print(f"[ERROR] {domain} via {tag} 失败: {type(e).__name__} - {e}")
-    return ips
+            print(f"[ERROR] {domain} via {tag} (UDP) 失败: {type(e1).__name__} - {e1}")
+        if ENABLE_TCP_FALLBACK and any(k in type(e1).__name__ for k in ("Timeout", "NoNameservers", "SERVFAIL")):
+            try:
+                return _do_query(tcp=True)
+            except Exception as e2:
+                if PRINT_VERBOSE_ERRORS:
+                    print(f"[ERROR] {domain} via {tag} (TCP) 失败: {type(e2).__name__} - {e2}")
+        return []
 
 def resolve_with_system(domain: str) -> List[str]:
     collected: Set[str] = set()
     sys_resolver = make_resolver(True)
     for i in range(SYSTEM_TRIES):
-        ips = query_a_once(sys_resolver, domain, f"system#{i+1}")
+        ips = query_a_once_with_tcp_fallback(sys_resolver, domain, f"system#{i+1}")
         if ips:
             collected.update(ips)
     return sorted(collected)
 
 def resolve_with_pool_round(domain: str, pool: List[str], start_idx: int) -> List[str]:
-    """对公共 DNS 池进行一轮分波并发查询（从 start_idx 切片开始），聚合所有波次结果。"""
+    """对公共 DNS 池进行一轮分波并发查询；命中也继续，聚合所有结果。"""
     if not pool:
         return []
     collected: Set[str] = set()
 
     total = len(pool)
-    # 从 start_idx 开始取，形成“旋转视图”，避免每轮都从头扫
     ordered = pool[start_idx:] + pool[:start_idx]
-
-    max_waves = min(WAVES_PER_ROUND, MAX_WAVES_PER_DOMAIN, (total + RESOLVERS_PER_WAVE - 1) // RESOLVERS_PER_WAVE)
+    max_waves = min(WAVES_PER_ROUND, MAX_WAVES_PER_DOMAIN,
+                    (total + RESOLVERS_PER_WAVE - 1) // RESOLVERS_PER_WAVE)
 
     for wave in range(max_waves):
         start = wave * RESOLVERS_PER_WAVE
@@ -192,12 +221,21 @@ def resolve_with_pool_round(domain: str, pool: List[str], start_idx: int) -> Lis
             futs = []
             for ns_ip in chunk:
                 def attempt(ip=ns_ip):
+                    # 熔断：失败太多次直接跳过
+                    if RESOLVER_FAIL_COUNT[ip] >= RESOLVER_FAIL_THRESHOLD:
+                        if PRINT_VERBOSE_ERRORS:
+                            print(f"[SKIP] 解析器 {ip} 已连续失败 {RESOLVER_FAIL_COUNT[ip]} 次，跳过")
+                        return []
                     r = make_resolver(False, ip)
                     local: Set[str] = set()
                     for k in range(RETRIES_PER_RESOLVER):
-                        ips = query_a_once(r, domain, f"{ip}#{k+1}")
+                        ips = query_a_once_with_tcp_fallback(r, domain, f"{ip}#{k+1}")
                         if ips:
                             local.update(ips)
+                    if local:
+                        RESOLVER_FAIL_COUNT[ip] = 0
+                    else:
+                        RESOLVER_FAIL_COUNT[ip] += 1
                     return sorted(local)
                 futs.append(ex.submit(attempt))
 
@@ -210,29 +248,34 @@ def resolve_with_pool_round(domain: str, pool: List[str], start_idx: int) -> Lis
                 if ips:
                     collected.update(ips)
 
+        # 波次间降速
+        time.sleep(SLEEP_BETWEEN_WAVES)
+
     return sorted(collected)
 
 def resolve_domain_multi_rounds(domain: str, resolvers: List[str]) -> List[str]:
-    """对单个域名进行多轮采样：系统DNS + 公共DNS池（每轮旋转起点），累计汇总。"""
+    """多轮采样：系统DNS + 公共DNS池（每轮旋转起点），累积结果。"""
     collected: Set[str] = set()
-
     for round_idx in range(SAMPLES_PER_DOMAIN):
-        # 1) 系统 DNS
+        # 系统 DNS
         sys_ips = resolve_with_system(domain)
         if sys_ips:
             collected.update(sys_ips)
 
-        # 2) 公共 DNS 池：每轮选择不同的起点，尽量覆盖更多解析器
+        # 公共 DNS 池
         if resolvers:
             start_idx = (round_idx * RESOLVERS_PER_WAVE) % len(resolvers)
             pool_ips = resolve_with_pool_round(domain, resolvers, start_idx=start_idx)
             if pool_ips:
                 collected.update(pool_ips)
 
+        # 轮次间降速
+        time.sleep(SLEEP_BETWEEN_ROUNDS)
+
     return sorted(collected)
 
 
-# =============== 主流程 ===============
+# ================= 主流程 =================
 
 def main() -> None:
     domains = load_domains()
@@ -247,10 +290,11 @@ def main() -> None:
     print(f"[INFO] 解析器池：{len(resolvers)} 个（建议 >= 200）")
     print(f"[INFO] 采样轮次：{SAMPLES_PER_DOMAIN}；每轮波次：{WAVES_PER_ROUND}；每波解析器：{RESOLVERS_PER_WAVE}")
     print(f"[INFO] 并发上限：{MAX_WORKERS}；每解析器重试：{RETRIES_PER_RESOLVER}")
+    print(f"[INFO] 降速：波次间 {SLEEP_BETWEEN_WAVES}s；轮次间 {SLEEP_BETWEEN_ROUNDS}s；单查询抖动 {JITTER_PER_QUERY[0]}~{JITTER_PER_QUERY[1]}s")
 
     all_ips: Set[str] = set()
 
-    # 域名级并发
+    # 域名级并发（收敛并发，避免总QPS过高）
     with ThreadPoolExecutor(max_workers=min(len(domains), MAX_WORKERS)) as ex:
         future_map = {ex.submit(resolve_domain_multi_rounds, d, resolvers): d for d in domains}
         for fut in as_completed(future_map):
@@ -271,9 +315,8 @@ def main() -> None:
     if new_text:
         new_text += "\n"
     IPS_FILE.write_text(new_text, encoding="utf-8")
-    print(f"\n[SAVED] 已写入 {IPS_FILE.resolve()} （{len(all_ips)} 个 IPv4）")
 
-    # 始终 0 退出，保证工作流不中断
+    print(f"\n[SAVED] 已写入 {IPS_FILE.resolve()} （{len(all_ips)} 个 IPv4）")
     return
 
 
