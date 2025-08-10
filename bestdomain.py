@@ -165,7 +165,7 @@ def create_dns_record(zone_id: str, rtype: str, name: str, content: str, ttl: in
                 request_with_retry("PUT", f"{BASE_URL}/zones/{zone_id}/dns_records/{rec_id}", json=data)
 
 # ---------- IP 获取 ----------
-def get_ip_list(url: str, max_ips: int = 20) -> List[str]:
+def get_ip_list(url: str, max_ips: int = 30) -> List[str]:
     try:
         resp = requests.get(url, timeout=TIMEOUT)
         ips = []
