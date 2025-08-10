@@ -280,13 +280,15 @@ async def main():
         'asiacdn': 'cdn.2020111.xyz',
         'west': 'cloudflare.182682.xyz',
         '1000ip': 'freeyx.cloudflare88.eu.org',
-        '87cf': 'freeyx.cloudflare88.eu.org',
-        '87ctcc': 'freeyx.cloudflare88.eu.org',
-        '87cmcc': 'freeyx.cloudflare88.eu.org',
-        '87cucc': 'freeyx.cloudflare88.eu.org',
-        '87asia': 'freeyx.cloudflare88.eu.org',
-        '87eu': 'freeyx.cloudflare88.eu.org',
-        '87na': 'freeyx.cloudflare88.eu.org',
+        '87cf': 'cf.877774.xyz',
+        '87ctcc': 'ct.877774.xyz',
+        '87cmcc': 'cmcc.877774.xyz',
+        '87cucc': 'cu.877774.xyz',
+        '87asia': 'asia.877774.xyz',
+        '87eu': 'eur.877774.xyz',
+        '87na': 'na.877774.xyz',
+        'cm': 'cf.090227.xyz',
+        
     }
     CNAME_TTL = AUTO_TTL
     CNAME_PROXIED = False  # 如需橙云，可改 True
