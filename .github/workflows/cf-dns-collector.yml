@@ -3,43 +3,49 @@ name: CF DNS Collector
 
 on:
   schedule:
-    # GitHub Actions 使用 UTC 时间；*/15 表示每 15 分钟运行一次
-    - cron: "*/15 * * * *"
-  # 支持手动触发
-  workflow_dispatch:
+    - cron: "*/15 * * * *"     # 每 15 分钟（UTC）
+  workflow_dispatch:           # 支持手动触发
 
-# 允许提交 ips.txt
 permissions:
-  contents: write
+  contents: write              # 允许提交 ips.txt
 
-# 防止并发重叠运行
+# 避免重叠：如果上一次还在跑，就让“新的一次”自动取消
 concurrency:
   group: cf-dns-collector
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45        # 运行时间放宽（脚本是低速稳态策略）
 
     steps:
-      # 1) 检出代码
+      # 1) 检出代码（完整历史，便于后续 rebase）
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
 
-      # 2) 安装 Python（不启用 pip 缓存，也不查找 requirements/pyproject）
+      # 2) 与远端同步，避免分叉导致 push 失败
+      - name: Sync with remote (rebase)
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase origin ${{ github.ref_name }} || true
+
+      # 3) Python 环境
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 3) 安装依赖（显式安装 dnspython）
+      # 4) 安装依赖
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install dnspython
 
-      # 4) 运行采集脚本（如你的文件名不同，请改成对应脚本名）
+      # 5) 运行采集脚本（注意：脚本会低速稳态运行较久）
       - name: Run collector
         env:
           PYTHONIOENCODING: "utf-8"
@@ -48,7 +54,16 @@ jobs:
         run: |
           python dns_collect.py
 
-      # 5) 如 ips.txt 有变化则自动提交
+      # 6) 输出解析到的 IPv4 数量（方便在日志里快速查看）
+      - name: Show IP count
+        run: |
+          if [ -f ips.txt ]; then
+            echo "IPv4 count: $(grep -c '^[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+$' ips.txt || true)"
+          else
+            echo "ips.txt not found"
+          fi
+
+      # 7) 仅当 ips.txt 变化时才提交（避免无意义提交）
       - name: Commit & Push if ips.txt changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
