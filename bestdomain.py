@@ -269,7 +269,7 @@ async def main():
         'proxy': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/proxy.txt',
         'cfip': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cfip.txt',
         #'bestcf': 'https://vps789.com/public/sum/cfIpApi',
-        'cm': 'https://addressesapi.090227.xyz/CloudFlareYes',
+        
         'cmcc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cmcc.txt',
         'cucc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/cucc.txt',
         'ctcc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/ctcc.txt',
