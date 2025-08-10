@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-IPv4 采集脚本（支持 200+ DNS 解析池）
-- 域名来源：优先读取 domains.txt（每行一个），否则用代码内 DOMAINS
-- 解析器来源：优先读取 dns_servers.txt（每行一个IPv4，建议>=200），否则用内置公共DNS兜底
-- 策略：系统DNS（可重试） -> 公共DNS池分波并发查询（命中即停当前域名）
+IPv4 采集脚本（多轮采样 + 200+ 公共 DNS）
+- 域名来源：优先 domains.txt（每行一个），否则用代码内 DOMAINS
+- 解析器来源：优先 dns_servers.txt（每行一个IPv4，建议>=200），否则用内置公共DNS兜底
+- 策略：
+    * 对每个域名进行多轮采样（SAMPLES_PER_DOMAIN 轮）；
+    * 每轮先用系统 DNS（可重试），再用公共 DNS 池分波并发查询；
+    * 每轮“命中也继续”，把所有波次的结果**都聚合**；
+    * 多轮的结果累计汇总，最后写入 ips.txt
 - 异常：全部打印到日志（包含解析器IP/异常类型），但不影响整体流程
-- 写入：等所有解析完成后，合并去重排序，一次性覆盖写入 ips.txt（每次运行都会写）
+- 写入：所有域名与轮次完成后，合并去重排序，一次性覆盖写入 ips.txt
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ import ipaddress
 import random
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Set
+from typing import List, Set, Dict
 
 # 依赖：dnspython
 try:
@@ -71,6 +75,9 @@ BUILTIN_RESOLVERS = [
     "1.2.4.8", "210.2.4.8",
 ]
 
+# 多轮采样
+SAMPLES_PER_DOMAIN = 3         # 每个域名采样轮次（越大越全、越慢）
+
 # 查询与并发参数
 PER_QUERY_TIMEOUT = 2.0        # 单次查询超时
 PER_QUERY_LIFETIME = 3.0       # 单次查询生命周期
@@ -78,7 +85,8 @@ RETRIES_PER_RESOLVER = 2       # 每个解析器的重试次数
 SYSTEM_TRIES = 2               # 系统DNS尝试次数
 MAX_WORKERS = min(32, (os.cpu_count() or 2) * 4)
 RESOLVERS_PER_WAVE = 24        # 每波并发解析器数量
-MAX_WAVES_PER_DOMAIN = 20      # 每域名最多多少波（≈ 24*20=480 解析器）
+WAVES_PER_ROUND = 5            # 每轮最多多少波（≈ 24*5=120 解析器/轮）
+MAX_WAVES_PER_DOMAIN = 1000    # 总波数上限（防止极端配置失控）
 
 # 文件
 DOMAINS_FILE = Path("domains.txt")
@@ -159,20 +167,24 @@ def resolve_with_system(domain: str) -> List[str]:
     for i in range(SYSTEM_TRIES):
         ips = query_a_once(sys_resolver, domain, f"system#{i+1}")
         if ips:
-            collected.update(ips); break
+            collected.update(ips)
     return sorted(collected)
 
-def resolve_with_pool(domain: str, pool: List[str]) -> List[str]:
-    """解析器池分波并发；命中即停当前域名。"""
+def resolve_with_pool_round(domain: str, pool: List[str], start_idx: int) -> List[str]:
+    """对公共 DNS 池进行一轮分波并发查询（从 start_idx 切片开始），聚合所有波次结果。"""
     if not pool:
         return []
     collected: Set[str] = set()
-    total = len(pool)
-    waves = min(MAX_WAVES_PER_DOMAIN, (total + RESOLVERS_PER_WAVE - 1) // RESOLVERS_PER_WAVE)
 
-    for wave in range(waves):
+    total = len(pool)
+    # 从 start_idx 开始取，形成“旋转视图”，避免每轮都从头扫
+    ordered = pool[start_idx:] + pool[:start_idx]
+
+    max_waves = min(WAVES_PER_ROUND, MAX_WAVES_PER_DOMAIN, (total + RESOLVERS_PER_WAVE - 1) // RESOLVERS_PER_WAVE)
+
+    for wave in range(max_waves):
         start = wave * RESOLVERS_PER_WAVE
-        chunk = pool[start:start + RESOLVERS_PER_WAVE]
+        chunk = ordered[start:start + RESOLVERS_PER_WAVE]
         if not chunk:
             break
 
@@ -181,33 +193,43 @@ def resolve_with_pool(domain: str, pool: List[str]) -> List[str]:
             for ns_ip in chunk:
                 def attempt(ip=ns_ip):
                     r = make_resolver(False, ip)
+                    local: Set[str] = set()
                     for k in range(RETRIES_PER_RESOLVER):
                         ips = query_a_once(r, domain, f"{ip}#{k+1}")
                         if ips:
-                            return ips
-                    return []
+                            local.update(ips)
+                    return sorted(local)
                 futs.append(ex.submit(attempt))
 
-            hit = False
             for fut in as_completed(futs):
                 try:
-                    ips = fut.result()
+                    ips = fut.result() or []
                 except Exception as e:
                     print(f"[FATAL] {domain} 解析器线程异常: {type(e).__name__} - {e}")
                     ips = []
                 if ips:
                     collected.update(ips)
-                    hit = True
-            if hit:
-                break  # 这一波有命中就停止继续浪费解析器
 
     return sorted(collected)
 
-def resolve_one(domain: str, resolvers: List[str]) -> List[str]:
-    ips = resolve_with_system(domain)
-    if ips:
-        return ips
-    return resolve_with_pool(domain, resolvers)
+def resolve_domain_multi_rounds(domain: str, resolvers: List[str]) -> List[str]:
+    """对单个域名进行多轮采样：系统DNS + 公共DNS池（每轮旋转起点），累计汇总。"""
+    collected: Set[str] = set()
+
+    for round_idx in range(SAMPLES_PER_DOMAIN):
+        # 1) 系统 DNS
+        sys_ips = resolve_with_system(domain)
+        if sys_ips:
+            collected.update(sys_ips)
+
+        # 2) 公共 DNS 池：每轮选择不同的起点，尽量覆盖更多解析器
+        if resolvers:
+            start_idx = (round_idx * RESOLVERS_PER_WAVE) % len(resolvers)
+            pool_ips = resolve_with_pool_round(domain, resolvers, start_idx=start_idx)
+            if pool_ips:
+                collected.update(pool_ips)
+
+    return sorted(collected)
 
 
 # =============== 主流程 ===============
@@ -223,13 +245,14 @@ def main() -> None:
 
     print(f"[INFO] 域名数量：{len(domains)}")
     print(f"[INFO] 解析器池：{len(resolvers)} 个（建议 >= 200）")
-    print(f"[INFO] 并发上限：{MAX_WORKERS}；每波解析器：{RESOLVERS_PER_WAVE}；每解析器重试：{RETRIES_PER_RESOLVER}")
+    print(f"[INFO] 采样轮次：{SAMPLES_PER_DOMAIN}；每轮波次：{WAVES_PER_ROUND}；每波解析器：{RESOLVERS_PER_WAVE}")
+    print(f"[INFO] 并发上限：{MAX_WORKERS}；每解析器重试：{RETRIES_PER_RESOLVER}")
 
     all_ips: Set[str] = set()
 
     # 域名级并发
     with ThreadPoolExecutor(max_workers=min(len(domains), MAX_WORKERS)) as ex:
-        future_map = {ex.submit(resolve_one, d, resolvers): d for d in domains}
+        future_map = {ex.submit(resolve_domain_multi_rounds, d, resolvers): d for d in domains}
         for fut in as_completed(future_map):
             d = future_map[fut]
             try:
@@ -243,7 +266,7 @@ def main() -> None:
             else:
                 print(f"[WARN] {d:<35} 未解析到 IPv4")
 
-    # —— 仅在所有解析完成后，合并去重排序，一次性覆盖写入 —— #
+    # —— 所有域名与轮次完成后，合并去重排序，一次性覆盖写入 —— #
     new_text = "\n".join(sorted(all_ips))
     if new_text:
         new_text += "\n"
