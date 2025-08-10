@@ -241,8 +241,15 @@ async def main():
     # 例：'cdn': 'cdn.vendor.net'
     subdomain_cname_mapping = {
         'asiacdn': 'cdn.2020111.xyz',
-        'asiacdn': 'cloudflare.182682.xyz',
+        'west': 'cloudflare.182682.xyz',
         '1000ip': 'freeyx.cloudflare88.eu.org',
+        '87cf': 'freeyx.cloudflare88.eu.org',
+        '87ctcc': 'freeyx.cloudflare88.eu.org',
+        '87cmcc': 'freeyx.cloudflare88.eu.org',
+        '87cucc': 'freeyx.cloudflare88.eu.org',
+        '87asia': 'freeyx.cloudflare88.eu.org',
+        '87eu': 'freeyx.cloudflare88.eu.org',
+        '87na': 'freeyx.cloudflare88.eu.org',
         # 'www': 'target.other.com',
         # 'cdn': 'vendor.cdn.net',
     }
