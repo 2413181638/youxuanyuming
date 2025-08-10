@@ -17,6 +17,9 @@ MAX_SCRIPT_RUNTIME = 300  # 最大脚本运行时间（秒）
 RATE_LIMIT_BATCH = 10  # 每批次处理 10 个请求
 RATE_LIMIT_DELAY = 1   # 每批次后暂停 1 秒
 
+# 统一使用 Cloudflare 的“自动 TTL”
+AUTO_TTL = 1
+
 # 记录脚本启动时间
 script_start_time = time.time()
 
@@ -104,9 +107,9 @@ def get_ip_list(url, max_ips=20):
         print(f"Error fetching IPs from {url}: {e}")
         return []
 
-def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, ttl=300):
+def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, ttl=AUTO_TTL):
     """
-    批量更新 Cloudflare DNS 记录，使用并发请求，并限制速率。ttl单位为秒（5分钟=300秒）。
+    批量更新 Cloudflare DNS 记录，使用并发请求，并限制速率。ttl=1 表示自动。
     """
     headers = {'Authorization': f'Bearer {api_token}', 'Content-Type': 'application/json'}
     record_name = f"{subdomain}.{domain}" if subdomain != '@' else domain
@@ -122,7 +125,7 @@ def update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, ttl=30
             return
         data = {"type": "A", "name": record_name, "content": ip, "ttl": ttl, "proxied": False}
         try:
-            response = request_with_retry('POST', f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records', headers=headers, json=data)
+            request_with_retry('POST', f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records', headers=headers, json=data)
             print(f"Added {record_name} -> {ip}")
         except Exception as e:
             print(f"Failed to add {record_name} -> {ip}: {e}")
@@ -176,6 +179,26 @@ def delete_existing_dns_records(api_token, zone_id, subdomain, domain):
     except Exception as e:
         print(f"Error deleting DNS records for {record_name}: {e}")
 
+# ===== 新增：查询现有 CNAME =====
+def get_existing_cname_record(api_token, zone_id, subdomain, domain):
+    """
+    查询子域当前是否已有 CNAME 记录：
+    - 返回 dict（Cloudflare record）或 None
+    """
+    headers = {'Authorization': f'Bearer {api_token}', 'Content-Type': 'application/json'}
+    record_name = f"{subdomain}.{domain}" if subdomain != '@' else domain
+    try:
+        resp = request_with_retry(
+            'GET',
+            f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=CNAME&name={record_name}',
+            headers=headers
+        )
+        records = resp.json().get('result', []) or []
+        return records[0] if records else None
+    except Exception as e:
+        print(f"Error querying CNAME for {record_name}: {e}")
+        return None
+
 # ===== 新增：删除 CNAME 记录（并可选清理 A 以避免冲突） =====
 def delete_existing_cname_records(api_token, zone_id, subdomain, domain, also_delete_A=True):
     headers = {'Authorization': f'Bearer {api_token}', 'Content-Type': 'application/json'}
@@ -200,8 +223,8 @@ def delete_existing_cname_records(api_token, zone_id, subdomain, domain, also_de
     except Exception as e:
         print(f"Error deleting CNAME for {record_name}: {e}")
 
-# ===== 新增：创建/更新 CNAME 记录 =====
-def upsert_cname_record(api_token, zone_id, subdomain, domain, target, ttl=300, proxied=False):
+# ===== 新增：创建/更新 CNAME 记录（TTL 自动） =====
+def upsert_cname_record(api_token, zone_id, subdomain, domain, target, ttl=AUTO_TTL, proxied=False):
     """
     为 subdomain 创建单条 CNAME：name -> target
     注意：DNS 规范同名只能有 1 条 CNAME，且不可与 A/AAAA 并存。
@@ -219,9 +242,25 @@ def upsert_cname_record(api_token, zone_id, subdomain, domain, target, ttl=300, 
     except Exception as e:
         print(f"Failed to add CNAME {record_name} -> {target}: {e}")
 
+# ===== 新增：只更新 TTL 的 PATCH =====
+def patch_dns_record_ttl(api_token, zone_id, record_id, ttl=AUTO_TTL):
+    headers = {'Authorization': f'Bearer {api_token}', 'Content-Type': 'application/json'}
+    try:
+        request_with_retry(
+            'PATCH',
+            f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}',
+            headers=headers,
+            json={"ttl": ttl}
+        )
+        print(f"[PATCH] TTL updated to {ttl} for record {record_id}")
+    except Exception as e:
+        print(f"[WARN] Patch TTL failed for {record_id}: {e}")
+
 async def main():
     """
-    主函数，保留原有 A 记录流程；另外单独处理 CNAME 列表（每个子域只创建 1 条 CNAME）。
+    主函数：
+    - A 记录：保留原流程，TTL 统一自动
+    - CNAME：先查，有且目标一致则只在 TTL≠自动时 PATCH；否则按需更新/创建，TTL 自动
     """
     api_token = os.getenv('CF_API_TOKEN')
     subdomain_ip_mapping = {
@@ -236,9 +275,7 @@ async def main():
         'ctcc': 'https://raw.githubusercontent.com/2413181638/youxuanyuming/main/ctcc.txt',
     }
 
-    # ===== 新增：CNAME 列表（你只需填别人域名的目标）=====
-    # 例：'www': 'target.other.com'
-    # 例：'cdn': 'cdn.vendor.net'
+    # CNAME 列表（你只需填别人域名的目标）
     subdomain_cname_mapping = {
         'asiacdn': 'cdn.2020111.xyz',
         'west': 'cloudflare.182682.xyz',
@@ -250,10 +287,8 @@ async def main():
         '87asia': 'freeyx.cloudflare88.eu.org',
         '87eu': 'freeyx.cloudflare88.eu.org',
         '87na': 'freeyx.cloudflare88.eu.org',
-        # 'www': 'target.other.com',
-        # 'cdn': 'vendor.cdn.net',
     }
-    CNAME_TTL = 300
+    CNAME_TTL = AUTO_TTL
     CNAME_PROXIED = False  # 如需橙云，可改 True
 
     zone_id, domain = get_cloudflare_zone(api_token)
@@ -261,7 +296,7 @@ async def main():
         print("Cloudflare Zone retrieval failed")
         return
 
-    # ===== 先按原逻辑更新 A 记录 =====
+    # ===== 先按原逻辑更新 A 记录（TTL=自动） =====
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         for subdomain, url in subdomain_ip_mapping.items():
             if is_timeout():
@@ -269,17 +304,44 @@ async def main():
             ip_list = await asyncio.get_event_loop().run_in_executor(executor, get_ip_list, url, 20)
             if ip_list:
                 delete_existing_dns_records(api_token, zone_id, subdomain, domain)
-                update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, ttl=300)
+                update_cloudflare_dns(ip_list, api_token, zone_id, subdomain, domain, ttl=AUTO_TTL)
             else:
                 print(f"No IPs found for {subdomain}.{domain} from {url}")
 
-    # ===== 再单独处理 CNAME 列表（每个子域 1 条）=====
+    # ===== 再单独处理 CNAME 列表（每个子域 1 条，TTL=自动）=====
     for subdomain, target in subdomain_cname_mapping.items():
         if is_timeout():
             break
-        # 为避免冲突：先删同名 CNAME，再可选删除 A
-        delete_existing_cname_records(api_token, zone_id, subdomain, domain, also_delete_A=True)
-        upsert_cname_record(api_token, zone_id, subdomain, domain, target, ttl=CNAME_TTL, proxied=CNAME_PROXIED)
+
+        record_name = f"{subdomain}.{domain}" if subdomain != '@' else domain
+        target_norm = (target or "").strip().strip(".").lower()
+        if not is_valid_hostname(target_norm):
+            print(f"[INFO] Skip invalid CNAME target for {record_name}: {target}")
+            continue
+
+        existing = get_existing_cname_record(api_token, zone_id, subdomain, domain)
+
+        if existing:
+            existing_target = (existing.get('content') or "").strip().strip(".").lower()
+            existing_ttl = existing.get('ttl')
+            if existing_target == target_norm:
+                # 仅检查 TTL；不是自动就改成自动
+                if existing_ttl != AUTO_TTL:
+                    print(f"[FIX] TTL not auto for {record_name} (ttl={existing_ttl}) -> set to AUTO")
+                    patch_dns_record_ttl(api_token, zone_id, existing.get('id'), ttl=AUTO_TTL)
+                else:
+                    print(f"[SKIP] CNAME unchanged & TTL auto: {record_name} -> {existing.get('content')}")
+                continue
+            else:
+                # 目标不同 —— 仅删除旧 CNAME，再创建新 CNAME（不动 A）
+                print(f"[UPDATE] CNAME target changed for {record_name}: {existing.get('content')} -> {target}")
+                delete_existing_cname_records(api_token, zone_id, subdomain, domain, also_delete_A=False)
+                upsert_cname_record(api_token, zone_id, subdomain, domain, target, ttl=CNAME_TTL, proxied=CNAME_PROXIED)
+        else:
+            # 不存在 —— 先删同名 A，避免冲突，再创建 CNAME（TTL 自动）
+            print(f"[CREATE] No existing CNAME for {record_name}, creating -> {target}")
+            delete_existing_dns_records(api_token, zone_id, subdomain, domain)  # 清理 A
+            upsert_cname_record(api_token, zone_id, subdomain, domain, target, ttl=CNAME_TTL, proxied=CNAME_PROXIED)
 
 if __name__ == "__main__":
     asyncio.run(main())
