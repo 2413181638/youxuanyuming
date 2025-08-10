@@ -1,67 +1,56 @@
 # .github/workflows/cf-dns-collector.yml
-# ======================================
-# 名称: CF DNS Collector
-# 作用: 每 15 分钟运行一次 Python 采集脚本（dns_collect.py），
-#       解析 Cloudflare 域名的 IPv4，并写入 ips.txt。
-#       当 ips.txt 有变化时自动提交到当前分支。
-# ======================================
-
 name: CF DNS Collector
 
 on:
   schedule:
-    # GitHub Actions 使用 UTC 时间，*/15 表示每 15 分钟运行一次
+    # GitHub Actions 使用 UTC 时间；*/15 表示每 15 分钟运行一次
     - cron: "*/15 * * * *"
-  # 允许手动触发工作流（在 Actions 页面点 “Run workflow”）
+  # 支持手动触发
   workflow_dispatch:
 
-# 允许工作流提交代码（必要，否则无法推送 ips.txt）
+# 允许提交 ips.txt
 permissions:
   contents: write
 
-# 保证同一时间只有一个此工作流在跑，防止上一次未完成时重叠运行
+# 防止并发重叠运行
 concurrency:
   group: cf-dns-collector
-  cancel-in-progress: false  # 如果已经在运行，不会中止正在跑的任务
+  cancel-in-progress: false
 
 jobs:
   collect:
-    runs-on: ubuntu-latest    # 使用最新版 Ubuntu 环境
-    timeout-minutes: 10       # 最长运行时间（分钟），避免死循环或长时间阻塞
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      # 第一步：检出仓库代码
+      # 1) 检出代码
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 第二步：安装 Python 运行环境
+      # 2) 安装 Python（不启用 pip 缓存，也不查找 requirements/pyproject）
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"  # 指定 Python 版本
-          cache: "pip"            # 缓存 pip 包，加快后续运行速度
+          python-version: "3.11"
 
-      # 第三步：安装 Python 依赖
-      # 这里安装 dnspython 库（你的 dns_collect.py 用它来解析 DNS）
+      # 3) 安装依赖（显式安装 dnspython）
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install dnspython
 
-      # 第四步：运行采集脚本
-      # 这里假设脚本名为 dns_collect.py，执行后会生成/覆盖 ips.txt
+      # 4) 运行采集脚本（如你的文件名不同，请改成对应脚本名）
       - name: Run collector
         env:
-          PYTHONIOENCODING: "utf-8"  # 确保 Python 输出为 UTF-8 编码
-          LC_ALL: "C.UTF-8"          # 统一本地化环境
+          PYTHONIOENCODING: "utf-8"
+          LC_ALL: "C.UTF-8"
           LANG: "C.UTF-8"
         run: |
           python dns_collect.py
 
-      # 第五步：如 ips.txt 有变化，则自动提交并推送
-      # 使用 stefanzweifel/git-auto-commit-action 自动化提交
+      # 5) 如 ips.txt 有变化则自动提交
       - name: Commit & Push if ips.txt changed
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: update ips.txt (auto)"  # 提交说明
-          file_pattern: ips.txt                           # 只提交 ips.txt
+          commit_message: "chore: update ips.txt (auto)"
+          file_pattern: ips.txt
