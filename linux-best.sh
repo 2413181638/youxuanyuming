@@ -39,7 +39,7 @@ advanced() {
   cat >/etc/sysctl.d/99-node-advanced.conf <<'EOF'
 net.core.netdev_max_backlog = 16384
 net.ipv4.tcp_fastopen = 3
-vm.swappiness = 10
+vm.swappiness = 40
 net.ipv4.ip_local_port_range = 10000 65000
 net.ipv4.tcp_ecn = 1
 EOF
