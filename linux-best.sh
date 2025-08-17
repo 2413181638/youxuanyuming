@@ -3,14 +3,15 @@
 
 set -euo pipefail
 
+GREEN="\033[1;32m"
+NC="\033[0m" # no color
+
 menu() {
   echo "=============================="
-  echo "   节点优化脚本 - 请选择操作"
-  echo "=============================="
-  echo "1) 应用【基线优化】 (稳妥推荐)"
-  echo "2) 应用【进阶增强】 (激进，可能兼容性差)"
-  echo "3) 设置【文件句柄上限】 (nofile=65535)"
-  echo "q) 退出"
+  echo -e "${GREEN}1) 应用【基线优化】 (稳妥推荐)${NC}"
+  echo -e "${GREEN}2) 应用【进阶增强】 (激进，可能兼容性差)${NC}"
+  echo -e "${GREEN}3) 设置【文件句柄上限】 (nofile=65535)${NC}"
+  echo -e "${GREEN}q) 退出${NC}"
   echo "=============================="
 }
 
@@ -59,15 +60,15 @@ EOF
   echo "已写入 /etc/security/limits.conf （需要重新登录或重启服务生效）"
 }
 
-# 主循环
-while true; do
-  menu
-  read -rp "请输入选项 (1/2/3/q): " choice
-  case "$choice" in
-    1) baseline ;;
-    2) advanced ;;
-    3) limits ;;
-    q|Q) echo "退出."; exit 0 ;;
-    *) echo "无效选项." ;;
-  esac
-done
+# 显示菜单并执行一次
+menu
+read -rp "请输入选项 (1/2/3/q): " choice
+case "$choice" in
+  1) baseline ;;
+  2) advanced ;;
+  3) limits ;;
+  q|Q) echo "退出."; exit 0 ;;
+  *) echo "无效选项." ;;
+esac
+
+echo "✅ 操作完成，脚本已退出。"
