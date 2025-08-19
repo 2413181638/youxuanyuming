@@ -17,7 +17,7 @@ menu() {
 
 baseline() {
   echo "[*] 写入基线优化参数..."
-  cat >/etc/sysctl.d/99-node-baseline.conf <<'EOF'
+  cat >>/etc/sysctl.conf <<'EOF'
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 net.core.somaxconn = 4096
@@ -37,7 +37,7 @@ EOF
 
 advanced() {
   echo "[*] 写入进阶增强参数..."
-  cat >/etc/sysctl.d/99-node-advanced.conf <<'EOF'
+  cat >>/etc/sysctl.conf <<'EOF'
 net.core.netdev_max_backlog = 16384
 net.ipv4.tcp_fastopen = 3
 vm.swappiness = 40
