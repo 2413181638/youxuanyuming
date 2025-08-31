@@ -72,41 +72,24 @@ gen_random_string() {
     LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w "$length" | head -n 1
 }
 
-# —— 获取最新 tag，带多重回退 ——
+# —— 获取最新 tag（API 直连，不走镜像；失败再用 Releases 重定向） ——
 fetch_latest_tag() {
     local tag=""
-
-    # 1) 先尝试：使用 down.npee.cn 代理 GitHub API
+    # 1) 直连 GitHub API
     tag=$(curl $CURL_OPTS -H "Accept: application/vnd.github+json" \
-        "${GH_MIRROR_PREFIX}https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" \
+        "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" \
         | grep -Eo '"tag_name"\s*:\s*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
 
-    # 2) 如果为空，尝试直连 GitHub API（可能你的网络能直连）
+    # 2) 直连失败，则用 Releases “latest” 重定向抓 tag（仍然直连，不走镜像）
     if [[ -z "$tag" ]]; then
-        tag=$(curl $CURL_OPTS -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" \
-            | grep -Eo '"tag_name"\s*:\s*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
-    fi
-
-    # 3) 还不行，使用 Releases “latest” 重定向获取 tag（先走镜像拿不到 headers 就直连）
-    if [[ -z "$tag" ]]; then
-        # 尝试镜像 HEAD
         loc=$(curl -sI --connect-timeout 5 --max-time 10 -H "User-Agent: ${UA}" \
-            "${GH_MIRROR_PREFIX}https://github.com/MHSanaei/3x-ui/releases/latest" \
+            "https://github.com/MHSanaei/3x-ui/releases/latest" \
             | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r')
-        # 镜像可能不返回 Location，就直连尝试
-        if [[ -z "$loc" ]]; then
-            loc=$(curl -sI --connect-timeout 5 --max-time 10 -H "User-Agent: ${UA}" \
-                "https://github.com/MHSanaei/3x-ui/releases/latest" \
-                | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r')
-        fi
-        # 解析 /tag/vX.Y.Z
         if [[ -n "$loc" ]]; then
             tag=$(echo "$loc" | sed -nE 's#.*/tag/([^/[:space:]]+).*#\1#p')
         fi
     fi
 
-    # 4) 仍失败，返回空由调用方提示手动指定
     echo -n "$tag"
 }
 
@@ -188,13 +171,13 @@ install_x-ui() {
     if [ $# == 0 ]; then
         tag_version=$(fetch_latest_tag)
         if [[ -z "$tag_version" ]]; then
-            echo -e "${red}Failed to fetch x-ui latest version via multiple methods.${plain}"
+            echo -e "${red}Failed to fetch x-ui latest version via API/redirect (direct only).${plain}"
             echo -e "${yellow}Tip:${plain} 你可以手动指定版本运行： ${blue}./install.sh v2.3.5${plain}（替换为你想要的 tag）"
             exit 1
         fi
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
 
-        # 使用 down.npee.cn 前缀代理 GitHub Releases
+        # 下载包（下载走镜像）
         wget -N -O /usr/local/x-ui-linux-$(arch).tar.gz \
             "${GH_MIRROR_PREFIX}https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
     else
@@ -218,7 +201,7 @@ install_x-ui() {
         exit 1
     fi
 
-    # 使用 down.npee.cn 前缀代理 raw.githubusercontent.com
+    # 下载管理脚本 raw（下载走镜像）
     wget -O /usr/bin/x-ui-temp \
         "${GH_MIRROR_PREFIX}https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.sh"
 
@@ -241,7 +224,7 @@ install_x-ui() {
         mv bin/xray-linux-$(arch) bin/xray-linux-arm
         chmod +x bin/xray-linux-arm
     fi
-    chmod +x x-ui bin/xray-linux-$(arch)
+    chmod +x x-ui bin/xray-linux-$(arch) 2>/dev/null || true
 
     # Update x-ui cli and set permission
     mv -f /usr/bin/x-ui-temp /usr/bin/x-ui
