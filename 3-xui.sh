@@ -6,7 +6,12 @@ blue='\033[0;34m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
+set -e
+
 cur_dir=$(pwd)
+GH_MIRROR_PREFIX="https://down.npee.cn/?"
+UA="curl/8.0 (+https://curl.se)"
+CURL_OPTS="--retry 2 --retry-delay 1 --connect-timeout 5 --max-time 12 -sL -H User-Agent:${UA}"
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}Fatal error: ${plain} Please run this script with root privilege \n " && exit 1
@@ -64,8 +69,45 @@ install_base() {
 
 gen_random_string() {
     local length="$1"
-    local random_string=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w "$length" | head -n 1)
-    echo "$random_string"
+    LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w "$length" | head -n 1
+}
+
+# —— 获取最新 tag，带多重回退 ——
+fetch_latest_tag() {
+    local tag=""
+
+    # 1) 先尝试：使用 down.npee.cn 代理 GitHub API
+    tag=$(curl $CURL_OPTS -H "Accept: application/vnd.github+json" \
+        "${GH_MIRROR_PREFIX}https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" \
+        | grep -Eo '"tag_name"\s*:\s*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+
+    # 2) 如果为空，尝试直连 GitHub API（可能你的网络能直连）
+    if [[ -z "$tag" ]]; then
+        tag=$(curl $CURL_OPTS -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" \
+            | grep -Eo '"tag_name"\s*:\s*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+    fi
+
+    # 3) 还不行，使用 Releases “latest” 重定向获取 tag（先走镜像拿不到 headers 就直连）
+    if [[ -z "$tag" ]]; then
+        # 尝试镜像 HEAD
+        loc=$(curl -sI --connect-timeout 5 --max-time 10 -H "User-Agent: ${UA}" \
+            "${GH_MIRROR_PREFIX}https://github.com/MHSanaei/3x-ui/releases/latest" \
+            | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r')
+        # 镜像可能不返回 Location，就直连尝试
+        if [[ -z "$loc" ]]; then
+            loc=$(curl -sI --connect-timeout 5 --max-time 10 -H "User-Agent: ${UA}" \
+                "https://github.com/MHSanaei/3x-ui/releases/latest" \
+                | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r')
+        fi
+        # 解析 /tag/vX.Y.Z
+        if [[ -n "$loc" ]]; then
+            tag=$(echo "$loc" | sed -nE 's#.*/tag/([^/[:space:]]+).*#\1#p')
+        fi
+    fi
+
+    # 4) 仍失败，返回空由调用方提示手动指定
+    echo -n "$tag"
 }
 
 config_after_install() {
@@ -144,51 +186,51 @@ install_x-ui() {
 
     # Download resources
     if [ $# == 0 ]; then
-        # 使用 down.npee.cn 前缀代理 GitHub API
-        tag_version=$(curl -Ls "https://down.npee.cn/?https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        if [[ ! -n "$tag_version" ]]; then
-            echo -e "${red}Failed to fetch x-ui version, it may be due to GitHub API restrictions, please try it later${plain}"
+        tag_version=$(fetch_latest_tag)
+        if [[ -z "$tag_version" ]]; then
+            echo -e "${red}Failed to fetch x-ui latest version via multiple methods.${plain}"
+            echo -e "${yellow}Tip:${plain} 你可以手动指定版本运行： ${blue}./install.sh v2.3.5${plain}（替换为你想要的 tag）"
             exit 1
         fi
         echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
+
         # 使用 down.npee.cn 前缀代理 GitHub Releases
-        wget -N -O /usr/local/x-ui-linux-$(arch).tar.gz "https://down.npee.cn/?https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Downloading x-ui failed, please be sure that your server can access GitHub ${plain}"
-            exit 1
-        fi
+        wget -N -O /usr/local/x-ui-linux-$(arch).tar.gz \
+            "${GH_MIRROR_PREFIX}https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
     else
         tag_version=$1
         tag_version_numeric=${tag_version#v}
         min_version="2.3.5"
 
+        # 简单版本比较：确保 >= 2.3.5
         if [[ "$(printf '%s\n' "$min_version" "$tag_version_numeric" | sort -V | head -n1)" != "$min_version" ]]; then
             echo -e "${red}Please use a newer version (at least v2.3.5). Exiting installation.${plain}"
             exit 1
         fi
 
-        # 使用 down.npee.cn 前缀代理 GitHub Releases（指定版本）
-        url="https://down.npee.cn/?https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
         echo -e "Beginning to install x-ui $1"
-        wget -N -O /usr/local/x-ui-linux-$(arch).tar.gz "${url}"
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Download x-ui $1 failed, please check if the version exists ${plain}"
-            exit 1
-        fi
+        wget -N -O /usr/local/x-ui-linux-$(arch).tar.gz \
+            "${GH_MIRROR_PREFIX}https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
+    fi
+
+    if [[ $? -ne 0 ]]; then
+        echo -e "${red}Downloading x-ui package failed. Please check your network or try a different mirror.${plain}"
+        exit 1
     fi
 
     # 使用 down.npee.cn 前缀代理 raw.githubusercontent.com
-    wget -O /usr/bin/x-ui-temp "https://down.npee.cn/?https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.sh"
+    wget -O /usr/bin/x-ui-temp \
+        "${GH_MIRROR_PREFIX}https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.sh"
 
     # Stop x-ui service and remove old resources
     if [[ -e /usr/local/x-ui/ ]]; then
-        systemctl stop x-ui
-        rm /usr/local/x-ui/ -rf
+        systemctl stop x-ui || true
+        rm -rf /usr/local/x-ui/
     fi
 
     # Extract resources and set permissions
     tar zxvf x-ui-linux-$(arch).tar.gz
-    rm x-ui-linux-$(arch).tar.gz -f
+    rm -f x-ui-linux-$(arch).tar.gz
     
     cd x-ui
     chmod +x x-ui
@@ -204,6 +246,7 @@ install_x-ui() {
     # Update x-ui cli and set permission
     mv -f /usr/bin/x-ui-temp /usr/bin/x-ui
     chmod +x /usr/bin/x-ui
+
     config_after_install
 
     cp -f x-ui.service /etc/systemd/system/
