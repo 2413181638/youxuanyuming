@@ -12,54 +12,6 @@ CFTTL=120
 FORCE=false
 WANIPSITE="http://ipv4.icanhazip.com"
 
-# ---------- 自动注册 systemd 自启定时任务 ----------
-AUTO_SYSTEMD_TIMER_NAME="cf-ddns"
-SYSTEMD_SERVICE_FILE="/etc/systemd/system/${AUTO_SYSTEMD_TIMER_NAME}.service"
-SYSTEMD_TIMER_FILE="/etc/systemd/system/${AUTO_SYSTEMD_TIMER_NAME}.timer"
-
-register_systemd_timer() {
-  if ! systemctl list-timers --all | grep -q "${AUTO_SYSTEMD_TIMER_NAME}.timer"; then
-    echo "检测到未安装 systemd 定时器，正在自动创建..."
-    sudo tee "${SYSTEMD_SERVICE_FILE}" >/dev/null <<EOF
-[Unit]
-Description=Cloudflare DDNS Update Service
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=$0
-StandardOutput=append:/var/log/cf-ddns.log
-StandardError=append:/var/log/cf-ddns.log
-EOF
-
-    sudo tee "${SYSTEMD_TIMER_FILE}" >/dev/null <<EOF
-[Unit]
-Description=Run Cloudflare DDNS update every minute
-
-[Timer]
-OnBootSec=10sec
-OnUnitActiveSec=1min
-Unit=${AUTO_SYSTEMD_TIMER_NAME}.service
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now "${AUTO_SYSTEMD_TIMER_NAME}.timer"
-    echo "✅ 已自动注册 systemd 定时器：每分钟运行一次"
-  fi
-}
-
-# 尝试注册 systemd（仅在 root 下执行才有权限）
-if [ "$(id -u)" -eq 0 ]; then
-  register_systemd_timer
-else
-  echo "⚠️ 当前不是 root 用户，跳过自启注册（建议用 root 执行一次自动创建 systemd 定时器）"
-fi
-
 # ---------- 主逻辑 ----------
 if [ "$CF_RECORD_TYPE" = "AAAA" ]; then
   WANIPSITE="http://ipv6.icanhazip.com"
