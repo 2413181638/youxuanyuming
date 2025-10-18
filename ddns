@@ -4,27 +4,63 @@ set -o nounset
 set -o pipefail
 
 # ---------- 配置区（可修改） ----------
-# 推荐方式 A: 从安全文件读取（优先）
-# CF_API_TOKEN_FILE=/root/.cf_api_token
-# if [ -f "$CF_API_TOKEN_FILE" ]; then
-#   CF_API_TOKEN="$(cat "$CF_API_TOKEN_FILE")"
-# fi
-
-# 推荐方式 B: 或直接在此处写 token（不建议长期这样）
 CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
-
-# 要更新的 zone（主域名）和记录（完整域名）
 CF_ZONE_NAME="5653111.xyz"
-# 如果你想更新根域名，请写完整域名：
 CF_RECORD_NAME="twddns.5653111.xyz"
-# 若要更新子域（例如 home.5653111.xyz），把上面改为 "home.5653111.xyz"
-
-CF_RECORD_TYPE="A"    # A 或 AAAA
+CF_RECORD_TYPE="A"
 CFTTL=120
-FORCE=false          # true 强制更新，即使本地记录 IP 没变
-WANIPSITE="http://ipv4.icanhazip.com"  # 获取公网 IPv4 的站点
+FORCE=false
+WANIPSITE="http://ipv4.icanhazip.com"
 
-# ---------- 逻辑开始（无需修改通常） ----------
+# ---------- 自动注册 systemd 自启定时任务 ----------
+AUTO_SYSTEMD_TIMER_NAME="cf-ddns"
+SYSTEMD_SERVICE_FILE="/etc/systemd/system/${AUTO_SYSTEMD_TIMER_NAME}.service"
+SYSTEMD_TIMER_FILE="/etc/systemd/system/${AUTO_SYSTEMD_TIMER_NAME}.timer"
+
+register_systemd_timer() {
+  if ! systemctl list-timers --all | grep -q "${AUTO_SYSTEMD_TIMER_NAME}.timer"; then
+    echo "检测到未安装 systemd 定时器，正在自动创建..."
+    sudo tee "${SYSTEMD_SERVICE_FILE}" >/dev/null <<EOF
+[Unit]
+Description=Cloudflare DDNS Update Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$0
+StandardOutput=append:/var/log/cf-ddns.log
+StandardError=append:/var/log/cf-ddns.log
+EOF
+
+    sudo tee "${SYSTEMD_TIMER_FILE}" >/dev/null <<EOF
+[Unit]
+Description=Run Cloudflare DDNS update every minute
+
+[Timer]
+OnBootSec=10sec
+OnUnitActiveSec=1min
+Unit=${AUTO_SYSTEMD_TIMER_NAME}.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now "${AUTO_SYSTEMD_TIMER_NAME}.timer"
+    echo "✅ 已自动注册 systemd 定时器：每分钟运行一次"
+  fi
+}
+
+# 尝试注册 systemd（仅在 root 下执行才有权限）
+if [ "$(id -u)" -eq 0 ]; then
+  register_systemd_timer
+else
+  echo "⚠️ 当前不是 root 用户，跳过自启注册（建议用 root 执行一次自动创建 systemd 定时器）"
+fi
+
+# ---------- 主逻辑 ----------
 if [ "$CF_RECORD_TYPE" = "AAAA" ]; then
   WANIPSITE="http://ipv6.icanhazip.com"
 elif [ "$CF_RECORD_TYPE" != "A" ]; then
@@ -32,7 +68,6 @@ elif [ "$CF_RECORD_TYPE" != "A" ]; then
   exit 2
 fi
 
-# 获取当前公网 IP
 WAN_IP=$(curl -fsS "${WANIPSITE}" || true)
 if [ -z "$WAN_IP" ]; then
   echo "无法获取公网 IP，退出"
@@ -46,23 +81,20 @@ if [ -f "$WAN_IP_FILE" ]; then
 fi
 
 if [ "$WAN_IP" = "$OLD_WAN_IP" ] && [ "$FORCE" = false ]; then
-  echo "WAN IP 未改变（$WAN_IP），不做更新（如需强制更新设 FORCE=true）"
+  echo "WAN IP 未改变（$WAN_IP），不做更新"
   exit 0
 fi
 
-# 获取 zone_id（缓存到文件以避免频繁请求）
 ID_FILE="$HOME/.cf-id_${CF_RECORD_NAME}.txt"
 if [ -f "$ID_FILE" ] && [ "$(wc -l < "$ID_FILE" || echo 0)" -eq 2 ]; then
   CFZONE_ID=$(sed -n '1p' "$ID_FILE")
   CFRECORD_ID=$(sed -n '2p' "$ID_FILE")
 else
   echo "查询 zone_id..."
-  # 使用 Bearer token 授权
   CFZONE_ID=$(curl -fsS -X GET "https://api.cloudflare.com/client/v4/zones?name=${CF_ZONE_NAME}" \
     -H "Authorization: Bearer ${CF_API_TOKEN}" \
     -H "Content-Type: application/json" \
-    | grep -Po '(?<="id":")[^"]*' | head -1 || true)
-
+    | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
   if [ -z "$CFZONE_ID" ]; then
     echo "未找到 zone_id，请检查 CF_ZONE_NAME 或 token 权限"
     exit 1
@@ -72,41 +104,33 @@ else
   CFRECORD_ID=$(curl -fsS -X GET "https://api.cloudflare.com/client/v4/zones/${CFZONE_ID}/dns_records?name=${CF_RECORD_NAME}" \
     -H "Authorization: Bearer ${CF_API_TOKEN}" \
     -H "Content-Type: application/json" \
-    | grep -Po '(?<="id":")[^"]*' | head -1 || true)
+    | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
 
-  # 如果没找到记录，尝试创建一个然后再取 id
   if [ -z "$CFRECORD_ID" ]; then
-    echo "记录不存在，尝试创建： ${CF_RECORD_NAME} -> ${WAN_IP}"
+    echo "记录不存在，创建中： ${CF_RECORD_NAME} -> ${WAN_IP}"
     CREATE_RESP=$(curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${CFZONE_ID}/dns_records" \
       -H "Authorization: Bearer ${CF_API_TOKEN}" \
       -H "Content-Type: application/json" \
       --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"${WAN_IP}\",\"ttl\":${CFTTL}}") || true
-
-    # 从返回中提取 id
-    CFRECORD_ID=$(echo "$CREATE_RESP" | grep -Po '(?<="id":")[^"]*' | head -1 || true)
+    CFRECORD_ID=$(echo "$CREATE_RESP" | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
     if [ -z "$CFRECORD_ID" ]; then
       echo "创建记录失败，响应： $CREATE_RESP"
       exit 1
     fi
   fi
-
-  # 缓存
   printf "%s\n%s\n" "$CFZONE_ID" "$CFRECORD_ID" > "$ID_FILE"
 fi
 
 echo "准备将 ${CF_RECORD_NAME} 更新为 ${WAN_IP}"
-
-# 执行更新
 RESPONSE=$(curl -fsS -X PUT "https://api.cloudflare.com/client/v4/zones/${CFZONE_ID}/dns_records/${CFRECORD_ID}" \
   -H "Authorization: Bearer ${CF_API_TOKEN}" \
   -H "Content-Type: application/json" \
   --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"${WAN_IP}\",\"ttl\":${CFTTL}}") || true
 
 if echo "$RESPONSE" | grep -q '"success":true'; then
-  echo "更新成功：${CF_RECORD_NAME} -> ${WAN_IP}"
+  echo "✅ 更新成功：${CF_RECORD_NAME} -> ${WAN_IP}"
   echo "$WAN_IP" > "$WAN_IP_FILE"
-  exit 0
 else
-  echo "更新失败，响应： $RESPONSE"
+  echo "❌ 更新失败，响应： $RESPONSE"
   exit 1
 fi
