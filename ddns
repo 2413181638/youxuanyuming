@@ -16,7 +16,7 @@ CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
 # 要更新的 zone（主域名）和记录（完整域名）
 CF_ZONE_NAME="5653111.xyz"
 # 如果你想更新根域名，请写完整域名：
-CF_RECORD_NAME="5653111.xyz"
+CF_RECORD_NAME="twddns.5653111.xyz"
 # 若要更新子域（例如 home.5653111.xyz），把上面改为 "home.5653111.xyz"
 
 CF_RECORD_TYPE="A"    # A 或 AAAA
