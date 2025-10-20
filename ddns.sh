@@ -6,7 +6,7 @@ set -o pipefail
 # ---------- Cloudflare DDNS 配置 ----------
 CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
 CF_ZONE_NAME="5653111.xyz"
-CF_RECORD_NAME="twddns.5653111.xyz"
+CF_RECORD_NAME="myddns.5653111.xyz"
 CF_RECORD_TYPE="A"
 CFTTL=120
 FORCE=false
