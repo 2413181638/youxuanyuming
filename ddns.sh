@@ -12,11 +12,11 @@ CFTTL=120
 FORCE=false
 WANIPSITE="http://ipv4.icanhazip.com"
 
-# ---------- 检测与循环参数 ----------
-TARGET_DOMAIN="email.163.com" # 检测国内连通性的目标
-PING_COUNT=10                 # 连续 ping 次数
-PING_GAP=3                    # 每次 ping 间隔秒数（共约 30 秒）
-CHECK_INTERVAL=30             # 每轮检测间隔秒数
+# ---------- 检测参数 ----------
+TARGET_DOMAIN="email.163.com"   # 国内检测目标
+PING_COUNT=10                   # ping 次数
+PING_GAP=3                      # 每次间隔秒
+CHECK_INTERVAL=30               # 每轮检测间隔秒
 ID_FILE="$HOME/.cf-id_${CF_RECORD_NAME}.txt"
 WAN_IP_FILE="$HOME/.cf-wan_ip_${CF_RECORD_NAME}.txt"
 
@@ -29,6 +29,7 @@ fi
 
 log() { printf "[%s] %s\n" "$(date '+%F %T')" "$*"; }
 
+# ---------- 检测网络连通性 ----------
 check_ip_reachable() {
   log "🔍 检测当前公网IP是否能访问 ${TARGET_DOMAIN}..."
   local ok=false
@@ -47,14 +48,15 @@ check_ip_reachable() {
   $ok
 }
 
+# ---------- 更换IP ----------
 change_ip() {
-  log "🚀 尝试更换 IP..."
-  # === 根据你的环境修改 ===
-  sudo systemctl restart networking || sudo systemctl restart NetworkManager || true
+  log "🚀 尝试更换 IP via curl 192.168.10.253 ..."
+  curl -fsS 192.168.10.253 >/dev/null 2>&1 || log "⚠️ curl 请求失败（可能是局域网接口未响应）"
   sleep 10
-  log "📶 已尝试换 IP"
+  log "📶 已触发更换 IP"
 }
 
+# ---------- Cloudflare 更新函数 ----------
 get_zone_and_record_ids() {
   local cfzone_id="" cfrecord_id=""
   if [ -f "$ID_FILE" ] && [ "$(wc -l < "$ID_FILE" || echo 0)" -eq 2 ]; then
@@ -121,7 +123,8 @@ cf_update_ddns() {
   fi
 }
 
-log "启动 DDNS 检测守护进程（检测 10 次，3s 间隔，失败换 IP）"
+# ---------- 主循环 ----------
+log "启动 DDNS 检测守护进程（ping 10 次，3s 间隔，curl 192.168.10.253 切换 IP）"
 while true; do
   if check_ip_reachable; then
     cf_update_ddns false || true
