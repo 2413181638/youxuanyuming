@@ -4,7 +4,7 @@ set -o nounset
 set -o pipefail
 
 # ---------- Cloudflare DDNS 配置 ----------
-CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
+CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"  # 永远默认值
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
 CF_RECORD_TYPE="A"
@@ -12,13 +12,20 @@ CFTTL=120
 FORCE=false
 WANIPSITE="http://ipv4.icanhazip.com"
 
-# ---------- 检测参数 ----------
+# ---------- 多 VPS 关键配置 ----------
+# 用于区分每台 VPS 的唯一标识（建议保持稳定）。默认用短主机名。
+VPS_ID="${VPS_ID:-$(hostname -s || echo vps)}"
+# 为每台 VPS 单独保存其 record_id / 上次 WAN IP
+STATE_DIR="${HOME}/.cf-ddns"
+mkdir -p "${STATE_DIR}"
+ID_FILE="${STATE_DIR}/cf-id_${CF_RECORD_NAME}_${VPS_ID}.txt"
+WAN_IP_FILE="${STATE_DIR}/cf-wan_ip_${CF_RECORD_NAME}_${VPS_ID}.txt"
+
+# ---------- 连通性检测 ----------
 TARGET_DOMAIN="email.163.com"   # 国内检测目标
 PING_COUNT=10                   # ping 次数
 PING_GAP=3                      # 每次间隔秒
 CHECK_INTERVAL=30               # 每轮检测间隔秒
-ID_FILE="$HOME/.cf-id_${CF_RECORD_NAME}.txt"
-WAN_IP_FILE="$HOME/.cf-wan_ip_${CF_RECORD_NAME}.txt"
 
 if [ "$CF_RECORD_TYPE" = "AAAA" ]; then
   WANIPSITE="http://ipv6.icanhazip.com"
@@ -29,7 +36,6 @@ fi
 
 log() { printf "[%s] %s\n" "$(date '+%F %T')" "$*"; }
 
-# ---------- 检测网络连通性 ----------
 check_ip_reachable() {
   log "🔍 检测当前公网IP是否能访问 ${TARGET_DOMAIN}..."
   local ok=false
@@ -48,7 +54,6 @@ check_ip_reachable() {
   $ok
 }
 
-# ---------- 更换IP ----------
 change_ip() {
   log "🚀 尝试更换 IP via curl 192.168.10.253 ..."
   curl -fsS 192.168.10.253 >/dev/null 2>&1 || log "⚠️ curl 请求失败（可能是局域网接口未响应）"
@@ -56,38 +61,56 @@ change_ip() {
   log "📶 已触发更换 IP"
 }
 
-# ---------- Cloudflare 更新函数 ----------
-get_zone_and_record_ids() {
-  local cfzone_id="" cfrecord_id=""
-  if [ -f "$ID_FILE" ] && [ "$(wc -l < "$ID_FILE" || echo 0)" -eq 2 ]; then
-    cfzone_id=$(sed -n '1p' "$ID_FILE")
-    cfrecord_id=$(sed -n '2p' "$ID_FILE")
-  else
-    log "查询 zone_id..."
-    cfzone_id=$(curl -fsS -X GET "https://api.cloudflare.com/client/v4/zones?name=${CF_ZONE_NAME}" \
-      -H "Authorization: Bearer ${CF_API_TOKEN}" \
-      -H "Content-Type: application/json" \
-      | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
-    [ -z "$cfzone_id" ] && { log "未找到 zone_id"; return 1; }
-
-    log "查询记录 id..."
-    cfrecord_id=$(curl -fsS -X GET "https://api.cloudflare.com/client/v4/zones/${cfzone_id}/dns_records?name=${CF_RECORD_NAME}" \
-      -H "Authorization: Bearer ${CF_API_TOKEN}" \
-      -H "Content-Type: application/json" \
-      | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
-    if [ -z "$cfrecord_id" ]; then
-      log "记录不存在，创建中..."
-      local create_resp
-      create_resp=$(curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${cfzone_id}/dns_records" \
-        -H "Authorization: Bearer ${CF_API_TOKEN}" \
-        -H "Content-Type: application/json" \
-        --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"0.0.0.0\",\"ttl\":${CFTTL}}") || true
-      cfrecord_id=$(echo "$create_resp" | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
-      [ -z "$cfrecord_id" ] && { log "创建失败：$create_resp"; return 1; }
-    fi
-    printf "%s\n%s\n" "$cfzone_id" "$cfrecord_id" > "$ID_FILE"
+# ---------- Cloudflare API 封装 ----------
+require_token() {
+  if [ -z "${CF_API_TOKEN}" ] || [ "${CF_API_TOKEN}" = "REPLACE_WITH_TOKEN" ]; then
+    log "❌ 缺少 CF_API_TOKEN，请通过环境变量提供：export CF_API_TOKEN=xxxxx"
+    exit 2
   fi
-  printf "%s|%s" "$cfzone_id" "$cfrecord_id"
+}
+
+get_zone_id() {
+  require_token
+  log "查询 zone_id..."
+  local zid
+  zid=$(curl -fsS -X GET "https://api.cloudflare.com/client/v4/zones?name=${CF_ZONE_NAME}" \
+    -H "Authorization: Bearer ${CF_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
+  [ -z "$zid" ] && { log "未找到 zone_id"; return 1; }
+  printf "%s" "$zid"
+}
+
+# 只为当前 VPS 创建/获取自己的 DNS 记录：
+# - 如果有缓存的 record_id，直接返回
+# - 否则：创建一条新的记录（带 comment=ddns:<VPS_ID>），并缓存 record_id
+get_or_create_own_record_id() {
+  local cfzone_id="$1"
+  local record_id=""
+  if [ -f "$ID_FILE" ]; then
+    record_id="$(cat "$ID_FILE" || true)"
+  fi
+
+  if [ -n "$record_id" ]; then
+    printf "%s" "$record_id"
+    return 0
+  fi
+
+  log "未缓存 record_id，为 VPS(${VPS_ID}) 创建专属记录..."
+  local create_resp
+  # 注意：不去查找“第一个”现有记录，避免误操作别的 VPS 的记录
+  create_resp=$(curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${cfzone_id}/dns_records" \
+    -H "Authorization: Bearer ${CF_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"0.0.0.0\",\"ttl\":${CFTTL},\"comment\":\"ddns:${VPS_ID}\"}") || true
+
+  record_id=$(echo "$create_resp" | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
+  if [ -z "$record_id" ]; then
+    log "❌ 创建记录失败：$create_resp"
+    return 1
+  fi
+  echo "$record_id" > "$ID_FILE"
+  printf "%s" "$record_id"
 }
 
 cf_update_ddns() {
@@ -103,17 +126,15 @@ cf_update_ddns() {
     return 0
   fi
 
-  local ids zone_id record_id
-  ids="$(get_zone_and_record_ids)" || return 1
-  zone_id="${ids%%|*}"
-  record_id="${ids##*|}"
+  local zone_id record_id resp
+  zone_id="$(get_zone_id)" || return 1
+  record_id="$(get_or_create_own_record_id "$zone_id")" || return 1
 
-  log "准备更新 ${CF_RECORD_NAME} -> ${wan_ip}"
-  local resp
+  log "准备更新（VPS=${VPS_ID}） ${CF_RECORD_NAME} -> ${wan_ip}  [record_id=${record_id}]"
   resp=$(curl -fsS -X PUT "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" \
     -H "Authorization: Bearer ${CF_API_TOKEN}" \
     -H "Content-Type: application/json" \
-    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"${wan_ip}\",\"ttl\":${CFTTL}}") || true
+    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"${wan_ip}\",\"ttl\":${CFTTL},\"comment\":\"ddns:${VPS_ID}\"}") || true
 
   if echo "$resp" | grep -q '"success":true'; then
     log "✅ Cloudflare 更新成功 -> ${wan_ip}"
@@ -124,7 +145,8 @@ cf_update_ddns() {
 }
 
 # ---------- 主循环 ----------
-log "启动 DDNS 检测守护进程（ping 10 次，3s 间隔，curl 192.168.10.253 切换 IP）"
+log "启动 DDNS 守护进程（多 VPS 友好：每台只维护自己的记录，互不影响）"
+log "VPS_ID=${VPS_ID}  记录名=${CF_RECORD_NAME}  类型=${CF_RECORD_TYPE}  TTL=${CFTTL}s"
 while true; do
   if check_ip_reachable; then
     cf_update_ddns false || true
