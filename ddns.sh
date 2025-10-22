@@ -4,28 +4,27 @@ set -o nounset
 set -o pipefail
 
 # ---------- Cloudflare DDNS 配置 ----------
-CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"  # 永远默认值
+CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"  # 建议用环境变量注入
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
-CF_RECORD_TYPE="A"
+CF_RECORD_TYPE="A"          # A / AAAA
 CFTTL=120
+PROXIED="${PROXIED:-false}" # "true" 或 "false"
 FORCE=false
 WANIPSITE="http://ipv4.icanhazip.com"
 
 # ---------- 多 VPS 关键配置 ----------
-# 用于区分每台 VPS 的唯一标识（建议保持稳定）。默认用短主机名。
 VPS_ID="${VPS_ID:-$(hostname -s || echo vps)}"
-# 为每台 VPS 单独保存其 record_id / 上次 WAN IP
 STATE_DIR="${HOME}/.cf-ddns"
 mkdir -p "${STATE_DIR}"
 ID_FILE="${STATE_DIR}/cf-id_${CF_RECORD_NAME}_${VPS_ID}.txt"
 WAN_IP_FILE="${STATE_DIR}/cf-wan_ip_${CF_RECORD_NAME}_${VPS_ID}.txt"
 
 # ---------- 连通性检测 ----------
-TARGET_DOMAIN="email.163.com"   # 国内检测目标
-PING_COUNT=10                   # ping 次数
-PING_GAP=3                      # 每次间隔秒
-CHECK_INTERVAL=30               # 每轮检测间隔秒
+TARGET_DOMAIN="email.163.com"
+PING_COUNT=10
+PING_GAP=3
+CHECK_INTERVAL=30
 
 if [ "$CF_RECORD_TYPE" = "AAAA" ]; then
   WANIPSITE="http://ipv6.icanhazip.com"
@@ -61,7 +60,7 @@ change_ip() {
   log "📶 已触发更换 IP"
 }
 
-# ---------- Cloudflare API 封装 ----------
+# ---------- Cloudflare API ----------
 require_token() {
   if [ -z "${CF_API_TOKEN}" ] || [ "${CF_API_TOKEN}" = "REPLACE_WITH_TOKEN" ]; then
     log "❌ 缺少 CF_API_TOKEN，请通过环境变量提供：export CF_API_TOKEN=xxxxx"
@@ -69,7 +68,7 @@ require_token() {
   fi
 }
 
-get_zone_id() {
+api_get_zone_id() {
   require_token
   log "查询 zone_id..."
   local zid
@@ -81,60 +80,80 @@ get_zone_id() {
   printf "%s" "$zid"
 }
 
-# 只为当前 VPS 创建/获取自己的 DNS 记录：
-# - 如果有缓存的 record_id，直接返回
-# - 否则：创建一条新的记录（带 comment=ddns:<VPS_ID>），并缓存 record_id
-get_or_create_own_record_id() {
-  local cfzone_id="$1"
-  local record_id=""
-  if [ -f "$ID_FILE" ]; then
-    record_id="$(cat "$ID_FILE" || true)"
-  fi
-
-  if [ -n "$record_id" ]; then
-    printf "%s" "$record_id"
-    return 0
-  fi
-
-  log "未缓存 record_id，为 VPS(${VPS_ID}) 创建专属记录..."
-  local create_resp
-  # 注意：不去查找“第一个”现有记录，避免误操作别的 VPS 的记录
-  create_resp=$(curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${cfzone_id}/dns_records" \
+# 校验缓存的 record_id 是否仍存在
+api_check_record_exists() {
+  local zone_id="$1" record_id="$2"
+  curl -fsS -X GET "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" \
     -H "Authorization: Bearer ${CF_API_TOKEN}" \
     -H "Content-Type: application/json" \
-    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"0.0.0.0\",\"ttl\":${CFTTL},\"comment\":\"ddns:${VPS_ID}\"}") || true
+    | grep -q '"success":true'
+}
 
-  record_id=$(echo "$create_resp" | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
-  if [ -z "$record_id" ]; then
-    log "❌ 创建记录失败：$create_resp"
+# 创建专属记录（带 comment 标记）
+api_create_own_record() {
+  local zone_id="$1"
+  local resp rid
+  log "未发现可用记录，为 VPS(${VPS_ID}) 创建专属记录..."
+  resp=$(curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+    -H "Authorization: Bearer ${CF_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"0.0.0.0\",\"ttl\":${CFTTL},\"proxied\":${PROXIED},\"comment\":\"ddns:${VPS_ID}\"}") || true
+  rid=$(echo "$resp" | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
+  if [ -z "$rid" ]; then
+    log "❌ 创建记录失败：$resp"
     return 1
   fi
+  echo "$rid"
+}
+
+# 确保当前 VPS 的记录就绪：若缓存失效则重建
+cf_ensure_record_ready() {
+  local zone_id record_id
+  zone_id="$(api_get_zone_id)" || return 1
+
+  # 1) 有缓存 -> 校验是否仍存在
+  if [ -f "$ID_FILE" ]; then
+    record_id="$(cat "$ID_FILE" || true)"
+    if [ -n "$record_id" ] && api_check_record_exists "$zone_id" "$record_id"; then
+      printf "%s|%s" "$zone_id" "$record_id"
+      return 0
+    else
+      log "⚠️ 缓存的 record_id 不存在或无效，准备重新创建"
+    fi
+  fi
+
+  # 2) 无缓存或失效 -> 直接创建专属记录
+  record_id="$(api_create_own_record "$zone_id")" || return 1
   echo "$record_id" > "$ID_FILE"
-  printf "%s" "$record_id"
+  printf "%s|%s" "$zone_id" "$record_id"
 }
 
 cf_update_ddns() {
   local force_flag="${1:-false}"
-  local wan_ip
+
+  # ☆ 先确保记录存在（即使 IP 没变也不跳过这一过程）
+  local ids zone_id record_id
+  ids="$(cf_ensure_record_ready)" || return 1
+  zone_id="${ids%%|*}"
+  record_id="${ids##*|}"
+
+  # 再决定要不要更新 IP
+  local wan_ip old_ip resp
   wan_ip=$(curl -fsS "${WANIPSITE}" || true)
   [ -z "$wan_ip" ] && { log "❌ 无法获取公网 IP"; return 1; }
 
-  local old_ip=""
+  old_ip=""
   [ -f "$WAN_IP_FILE" ] && old_ip=$(cat "$WAN_IP_FILE" || true)
   if [ "$wan_ip" = "$old_ip" ] && [ "$FORCE" = false ] && [ "$force_flag" = false ]; then
-    log "WAN IP 未改变（$wan_ip），跳过更新"
+    log "WAN IP 未改变（$wan_ip），跳过更新（但记录已确保存在）"
     return 0
   fi
-
-  local zone_id record_id resp
-  zone_id="$(get_zone_id)" || return 1
-  record_id="$(get_or_create_own_record_id "$zone_id")" || return 1
 
   log "准备更新（VPS=${VPS_ID}） ${CF_RECORD_NAME} -> ${wan_ip}  [record_id=${record_id}]"
   resp=$(curl -fsS -X PUT "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" \
     -H "Authorization: Bearer ${CF_API_TOKEN}" \
     -H "Content-Type: application/json" \
-    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"${wan_ip}\",\"ttl\":${CFTTL},\"comment\":\"ddns:${VPS_ID}\"}") || true
+    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"${wan_ip}\",\"ttl\":${CFTTL},\"proxied\":${PROXIED},\"comment\":\"ddns:${VPS_ID}\"}") || true
 
   if echo "$resp" | grep -q '"success":true'; then
     log "✅ Cloudflare 更新成功 -> ${wan_ip}"
@@ -146,7 +165,13 @@ cf_update_ddns() {
 
 # ---------- 主循环 ----------
 log "启动 DDNS 守护进程（多 VPS 友好：每台只维护自己的记录，互不影响）"
-log "VPS_ID=${VPS_ID}  记录名=${CF_RECORD_NAME}  类型=${CF_RECORD_TYPE}  TTL=${CFTTL}s"
+log "VPS_ID=${VPS_ID}  记录名=${CF_RECORD_NAME}  类型=${CF_RECORD_TYPE}  TTL=${CFTTL}s  PROXIED=${PROXIED}"
+
+# ☆ 启动即确保记录存在（不会因为 IP 未变而跳过）
+cf_ensure_record_ready || true
+# ☆ 也可以选择一上来就强制同步一次 IP（可按需开启）
+# cf_update_ddns true || true
+
 while true; do
   if check_ip_reachable; then
     cf_update_ddns false || true
