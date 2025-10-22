@@ -33,7 +33,7 @@ elif [ "$CF_RECORD_TYPE" != "A" ]; then
   exit 2
 fi
 
-log() { printf "[%s] %s\n" "$(date '+%F %T')" "$*"; }
+log() { printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
 
 check_ip_reachable() {
   log "🔍 检测当前公网IP是否能访问 ${TARGET_DOMAIN}..."
