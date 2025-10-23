@@ -7,10 +7,9 @@ set -o pipefail
 CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"  # 建议用环境变量注入
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="wyddns.5653111.xyz"
-CF_RECORD_TYPE="A"           # A 或 AAAA
+CF_RECORD_TYPE="A"            # A 或 AAAA
 CFTTL=120
-PROXIED="${PROXIED:-false}"  # true/false（不加引号注入 JSON）
-FORCE=false
+PROXIED="${PROXIED:-false}"   # true/false（不加引号注入 JSON）
 WANIPSITE="http://ipv4.icanhazip.com"
 
 # ---------- 多 VPS 关键配置 ----------
@@ -33,6 +32,12 @@ elif [ "$CF_RECORD_TYPE" != "A" ]; then
   echo "$CF_RECORD_TYPE 指定无效，仅支持 A 或 AAAA" >&2
   exit 2
 fi
+
+# 校验 PROXIED 值
+case "$PROXIED" in
+  true|false) : ;;
+  *) echo "PROXIED 必须为 true 或 false（当前：$PROXIED）" >&2; exit 2;;
+esac
 
 # 打印到 stderr，避免污染命令替换
 log() { printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
@@ -160,20 +165,17 @@ cf_ensure_record_ready() {
   printf "%s|%s\n" "$zone_id" "$record_id"
 }
 
-# 使用 PATCH 更新；返回 "HTTP|BODY"
+# 仅更新必要字段：content/ttl/proxied —— 使用 PATCH
 _cf_update_record() {
   local zone_id="$1" record_id="$2" wan_ip="$3"
   local data resp http body
-  data=$(printf '{"type":"%s","name":"%s","content":"%s","ttl":%s,"proxied":%s,"comment":"ddns:%s"}' \
-        "$CF_RECORD_TYPE" "$CF_RECORD_NAME" "$wan_ip" "$CFTTL" "$PROXIED" "$VPS_ID")
+  data=$(printf '{"content":"%s","ttl":%s,"proxied":%s}' "$wan_ip" "$CFTTL" "$PROXIED")
   resp="$(_cf_api PATCH "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" "$data")"
   http="${resp##*|}"; body="${resp%|*}"
   echo "${http}|${body}"
 }
 
 cf_update_ddns() {
-  local force_flag="${1:-false}"
-
   # 先确保记录存在
   local ids zone_id record_id
   ids="$(cf_ensure_record_ready)" || return 1
@@ -188,7 +190,7 @@ cf_update_ddns() {
 
   [ -f "$WAN_IP_FILE" ] && old_ip="$(cat "$WAN_IP_FILE" || true)" || old_ip=""
 
-  if [ "$wan_ip" = "$old_ip" ] && [ "$FORCE" = false ] && [ "$force_flag" = false ]; then
+  if [ "$wan_ip" = "$old_ip" ]; then
     log "WAN IP 未改变（$wan_ip），跳过更新（记录已确保存在）"
     return 0
   fi
@@ -227,16 +229,16 @@ log "启动 DDNS 守护进程（多 VPS 友好：每台只维护自己的记录�
 log "VPS_ID=${VPS_ID}  记录名=${CF_RECORD_NAME}  类型=${CF_RECORD_TYPE}  TTL=${CFTTL}s  PROXIED=${PROXIED}"
 
 # 启动即确保记录存在，并立刻同步一次 IP（避免短暂出现占位 IP）
-cf_ensure_record_ready || true
-cf_update_ddns true || true
+cf_ensure_record_ready >/dev/null || true
+cf_update_ddns || true
 
 while true; do
   if check_ip_reachable; then
-    cf_update_ddns false || true
+    cf_update_ddns || true
   else
     change_ip
     sleep 10
-    cf_update_ddns true || true
+    cf_update_ddns || true
   fi
   log "⏳ ${CHECK_INTERVAL}s 后再次检测..."
   sleep "$CHECK_INTERVAL"
