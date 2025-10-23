@@ -4,7 +4,7 @@ set -o nounset
 set -o pipefail
 
 # ---------- Cloudflare DDNS 配置 ----------
-CF_API_TOKEN="${CF_API_TOKEN:-"REPLACE_WITH_TOKEN"}"   # 建议用环境变量注入
+CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"   # 建议用环境变量注入
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
 CF_RECORD_TYPE="A"          # A / AAAA
