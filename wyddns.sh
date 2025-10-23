@@ -9,7 +9,7 @@ CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="wyddns.5653111.xyz"
 CF_RECORD_TYPE="A"          # A / AAAA
 CFTTL=120
-PROXIED="${PROXIED:-false}" # "true" 或 "false"
+PROXIED="${PROXIED:-false}" # true/false（不加引号进 JSON）
 FORCE=false
 WANIPSITE="http://ipv4.icanhazip.com"
 
@@ -33,6 +33,7 @@ elif [ "$CF_RECORD_TYPE" != "A" ]; then
   exit 2
 fi
 
+# 打印到 stderr，避免污染命令替换输出
 log() { printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
 
 check_ip_reachable() {
@@ -89,15 +90,29 @@ api_check_record_exists() {
     | grep -q '"success":true'
 }
 
-# 创建专属记录（带 comment 标记）
+# 创建专属记录（创建时就用真实公网 IP；如取 IP 失败则回退到 0.0.0.0 / ::0）
 api_create_own_record() {
   local zone_id="$1"
+
+  # 先取当前公网 IP，尽量避免出现 0.0.0.0
+  local current_ip fallback_ip
+  if [ "$CF_RECORD_TYPE" = "AAAA" ]; then
+    fallback_ip="::0"
+  else
+    fallback_ip="0.0.0.0"
+  fi
+  current_ip=$(curl -fsS "${WANIPSITE}" || echo "$fallback_ip")
+  # 去掉可能的换行符
+  current_ip="${current_ip//$'\n'/}"
+  current_ip="${current_ip//$'\r'/}"
+
+  log "未发现可用记录，为 VPS(${VPS_ID}) 创建专属记录（初始 IP=${current_ip}）..."
   local resp rid
-  log "未发现可用记录，为 VPS(${VPS_ID}) 创建专属记录..."
   resp=$(curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
     -H "Authorization: Bearer ${CF_API_TOKEN}" \
     -H "Content-Type: application/json" \
-    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"0.0.0.0\",\"ttl\":${CFTTL},\"proxied\":${PROXIED},\"comment\":\"ddns:${VPS_ID}\"}") || true
+    --data "{\"type\":\"${CF_RECORD_TYPE}\",\"name\":\"${CF_RECORD_NAME}\",\"content\":\"${current_ip}\",\"ttl\":${CFTTL},\"proxied\":${PROXIED},\"comment\":\"ddns:${VPS_ID}\"}") || true
+
   rid=$(echo "$resp" | grep -Po '(?<=\"id\":\")[^\"]*' | head -1 || true)
   if [ -z "$rid" ]; then
     log "❌ 创建记录失败：$resp"
@@ -122,7 +137,7 @@ cf_ensure_record_ready() {
     fi
   fi
 
-  # 2) 无缓存或失效 -> 直接创建专属记录
+  # 2) 无缓存或失效 -> 直接创建专属记录（创建时即写真实 IP）
   record_id="$(api_create_own_record "$zone_id")" || return 1
   echo "$record_id" > "$ID_FILE"
   printf "%s|%s" "$zone_id" "$record_id"
@@ -141,6 +156,8 @@ cf_update_ddns() {
   local wan_ip old_ip resp
   wan_ip=$(curl -fsS "${WANIPSITE}" || true)
   [ -z "$wan_ip" ] && { log "❌ 无法获取公网 IP"; return 1; }
+  wan_ip="${wan_ip//$'\n'/}"
+  wan_ip="${wan_ip//$'\r'/}"
 
   old_ip=""
   [ -f "$WAN_IP_FILE" ] && old_ip=$(cat "$WAN_IP_FILE" || true)
@@ -167,10 +184,9 @@ cf_update_ddns() {
 log "启动 DDNS 守护进程（多 VPS 友好：每台只维护自己的记录，互不影响）"
 log "VPS_ID=${VPS_ID}  记录名=${CF_RECORD_NAME}  类型=${CF_RECORD_TYPE}  TTL=${CFTTL}s  PROXIED=${PROXIED}"
 
-# ☆ 启动即确保记录存在（不会因为 IP 未变而跳过）
+# ☆ 启动即确保记录存在；并立刻同步一次 IP（避免短暂出现 0.0.0.0）
 cf_ensure_record_ready || true
-# ☆ 也可以选择一上来就强制同步一次 IP（可按需开启）
-# cf_update_ddns true || true
+cf_update_ddns true || true
 
 while true; do
   if check_ip_reachable; then
