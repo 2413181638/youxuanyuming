@@ -3,10 +3,10 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-# ---------- Cloudflare DDNS 配置 ----------
-CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"  # 建议用环境变量注入
+# ===================== 基本配置（写死 Token，注意安全） =====================
+CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"   # 建议日后改为用环境变量注入
 CF_ZONE_NAME="5653111.xyz"
-CF_RECORD_NAME="wyddns.5653111.xyz"
+CF_RECORD_NAME="wyddns.5653111.xyz"  # 多 VPS 共享同名记录实现轮询
 CF_RECORD_TYPE="A"                    # A / AAAA
 CFTTL=120
 PROXIED="false"                       # true / false（不要带引号进 JSON）
@@ -24,7 +24,8 @@ WAN_IP_FILE="${STATE_DIR}/cf-wan_ip_${CF_RECORD_NAME}_${VPS_ID}.txt"   # 本机�
 CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"   # 换 IP 计数
 
 # ===================== 连通性检测配置 =====================
-TARGET_DOMAIN="email.163.com"
+# 多目标：任意一个目标有一次 ping 成功 -> 视为“未被墙”
+TARGET_DOMAINS=("email.163.com" "guanjia.qq.com" "weixin.qq.com")
 PING_COUNT=10
 PING_GAP=3
 CHECK_INTERVAL=30
@@ -71,24 +72,43 @@ fi
 
 case "$PROXIED" in true|false) : ;; *) echo "PROXIED 必须为 true 或 false（当前：$PROXIED）" >&2; exit 2;; esac
 
+validate_ip() {
+  local ip="$1"
+  if [ "$CF_RECORD_TYPE" = "A" ]; then
+    [[ "$ip" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$ ]]
+  else
+    # 简单 IPv6 校验（压缩形式也可）
+    [[ "$ip" =~ ^(([0-9A-Fa-f]{1,4}:){1,7}:?|:((:[0-9A-Fa-f]{1,4}){1,7}))$|^(([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})$ ]]
+  fi
+}
+
 _get_wan_ip() {
   local ip
   ip=$(curl -fsS "$WANIPSITE" || true)
-  [ -z "$ip" ] && return 1
-  _trim "$ip"
+  ip="$(_trim "${ip:-}")"
+  # 严格：拿不到有效公网 IP 就返回失败（绝不写入 0.0.0.0 / ::0）
+  if [ -z "$ip" ] || ! validate_ip "$ip"; then
+    return 1
+  fi
+  printf "%s" "$ip"
 }
 
+# 多目标多次 ping：任意目标任意一次成功即返回 0；全部失败返回 1
 check_ip_reachable() {
-  log "🔍 检测当前公网IP是否能访问 ${TARGET_DOMAIN}..."
-  for ((i=1;i<=PING_COUNT;i++)); do
-    if ping -c 1 -W 3 "$TARGET_DOMAIN" >/dev/null 2>&1; then
-      log "✅ 第 ${i}/${PING_COUNT} 次 ping 成功 —— 网络正常"
-      return 0
-    else
-      log "⚠️ 第 ${i}/${PING_COUNT} 次 ping 失败"
-      [ $i -lt $PING_COUNT ] && sleep "$PING_GAP"
-    fi
+  log "🔍 连通性检测：目标=${TARGET_DOMAINS[*]}，每个目标最多 ${PING_COUNT} 次"
+  local domain
+  for domain in "${TARGET_DOMAINS[@]}"; do
+    for ((i=1;i<=PING_COUNT;i++)); do
+      if ping -c 1 -W 3 "$domain" >/dev/null 2>&1; then
+        log "✅ ${domain}：第 ${i}/${PING_COUNT} 次 ping 成功 —— 网络判定为【正常】"
+        return 0
+      else
+        log "⚠️  ${domain}：第 ${i}/${PING_COUNT} 次 ping 失败"
+        [ $i -lt $PING_COUNT ] && sleep "$PING_GAP"
+      fi
+    done
   done
+  log "❌ 所有目标均未 ping 通 —— 网络判定为【不通/被墙】"
   return 1
 }
 
@@ -151,14 +171,17 @@ api_get_own_record_ip() {
   [ -n "$rip" ] && printf "%s" "$rip" || return 1
 }
 
-# 创建“本机专属”记录（注释 ddns:VPS_ID；创建即写真实 IP；失败回退 0.0.0.0/::0）
+# 创建“本机专属”记录（严格：必须传入合法公网 IP；否则拒绝创建）
 api_create_own_record() {
-  local zone_id="$1" ip fallback_ip data out http body rid
-  fallback_ip=$([ "$CF_RECORD_TYPE" = "AAAA" ] && echo "::0" || echo "0.0.0.0")
-  ip="$(_get_wan_ip || echo "$fallback_ip")"
+  local zone_id="$1" ip="$2" data out http body rid
+  if [ -z "$ip" ] || ! validate_ip "$ip"; then
+    log "❌ 创建记录被拒绝：未获取到合法公网 IP（绝不写入 0.0.0.0 / ::0）"
+    return 1
+  fi
   log "为 VPS(${VPS_ID}) 创建专属记录（初始 IP=${ip}）..."
-  data=$(printf '{"type":"%s","name":"%s","content":"%s","ttl":%s,"proxied":%s,"comment":"ddns:%s"}' \
-        "$CF_RECORD_TYPE" "$CF_RECORD_NAME" "$ip" "$CFTTL" "$PROXIED" "$VPS_ID")
+  # 只发必要字段，避免 400
+  data=$(printf '{"type":"%s","name":"%s","content":"%s","ttl":%s,"proxied":%s}' \
+        "$CF_RECORD_TYPE" "$CF_RECORD_NAME" "$ip" "$CFTTL" "$PROXIED")
   out="$(_cf_api POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" "$data")"
   http="${out##*|}"; body="${out%|*}"
   if [ "$http" != "200" ] && [ "$http" != "201" ]; then
@@ -173,26 +196,28 @@ api_create_own_record() {
 # 仅更新必要字段；若遇 81058（完全相同记录已存在）当作成功
 api_patch_record_content() {
   local zone_id="$1" record_id="$2" ip="$3" data out http body
+  if [ -z "$ip" ] || ! validate_ip "$ip"; then
+    echo "ERR|400|invalid ip"
+    return 1
+  fi
   data=$(printf '{"content":"%s","ttl":%s,"proxied":%s}' "$ip" "$CFTTL" "$PROXIED")
   out="$(_cf_api PATCH "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" "$data")"
   http="${out##*|}"; body="${out%|*}"
 
   if [ "$http" = "200" ]; then
-    echo "OK|$body"
-    return 0
+    echo "OK|$body"; return 0
   fi
   if echo "$body" | grep -q '"code":81058'; then
-    echo "OK|$body"
-    return 0
+    echo "OK|$body"; return 0
   fi
-  echo "ERR|${http}|${body}"
-  return 1
+  echo "ERR|${http}|${body}"; return 1
 }
 
-# 确保“本机专属记录”存在：优先用缓存 record_id，不存在则创建
+# 确保“本机专属记录”存在（必须用真实合法 WAN IP 创建；否则跳过）
 ensure_own_record_ready() {
-  local zone_id record_id
+  local zone_id ip="$2" record_id
   zone_id="$(api_get_zone_id)" || return 1
+
   if [ -f "$ID_FILE" ]; then
     record_id="$(cat "$ID_FILE" || true)"
     if [ -n "$record_id" ] && api_check_record_exists "$zone_id" "$record_id"; then
@@ -201,7 +226,9 @@ ensure_own_record_ready() {
     fi
     log "⚠️ 缓存 record_id 无效，将重建"
   fi
-  record_id="$(api_create_own_record "$zone_id")" || return 1
+
+  # 严格：没有合法 WAN IP 就不创建
+  record_id="$(api_create_own_record "$zone_id" "$ip")" || return 1
   echo "$record_id" > "$ID_FILE"
   printf "%s|%s\n" "$zone_id" "$record_id"
 }
@@ -210,7 +237,8 @@ ensure_own_record_ready() {
 sync_dns_if_needed() {
   local wan_ip zone_id record_id ids own_ip patch_msg
 
-  wan_ip="$(_get_wan_ip)" || { log "❌ 无法获取公网 IP"; return 1; }
+  # —— 只用真实、且校验合法的公网 IP ——
+  wan_ip="$(_get_wan_ip)" || { log "❌ 未获取到合法公网 IP，跳过本轮（不创建、不更新）"; return 1; }
 
   # 1) 可达时：若“任意记录”已是目标 IP，直接跳过（避免 81058）
   zone_id="$(api_get_zone_id)" || return 1
@@ -220,8 +248,8 @@ sync_dns_if_needed() {
     return 0
   fi
 
-  # 2) 仅维护本机记录：不存在则创建，存在则按需 PATCH
-  ids="$(ensure_own_record_ready)" || return 1
+  # 2) 仅维护本机记录：不存在则用“真实 WAN IP”创建；存在则按需 PATCH
+  ids="$(ensure_own_record_ready "$zone_id" "$wan_ip")" || return 1
   zone_id="${ids%%|*}"
   record_id="${ids##*|}"
 
@@ -245,12 +273,12 @@ sync_dns_if_needed() {
 }
 
 # ===================== 先检测墙 → 再按需处理 DDNS =====================
-log "启动 DDNS 守护进程（多 VPS 友好：只维护本机记录，不删除他人）"
+log "启动 DDNS 守护进程（多 VPS 友好：只维护本机记录，不删除他人；创建/更新一律写真实公网 IP）"
 log "VPS_ID=${VPS_ID}  记录名=${CF_RECORD_NAME}  类型=${CF_RECORD_TYPE}  TTL=${CFTTL}s  PROXIED=${PROXIED}"
 
 while true; do
   if check_ip_reachable; then
-    # 通：只检查是否已解析到当前 IP，有就跳过；否则仅更新本机记录
+    # 通：只检查是否已解析到当前 IP，有就跳过；否则仅更新/创建本机记录（写真实 IP）
     sync_dns_if_needed || true
   else
     # 不通：换 IP（累计），然后再按需同步（同样先查是否已有该 IP）
