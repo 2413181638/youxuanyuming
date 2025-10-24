@@ -26,9 +26,9 @@ CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"   # 换 IP 
 # ===================== 连通性检测配置 =====================
 # 多目标：任意一个目标有一次 ping 成功 -> 视为“未被墙”
 TARGET_DOMAINS=("email.163.com" "guanjia.qq.com" "weixin.qq.com")
-PING_COUNT=10          # 每个目标最多 ping 次数
-PING_GAP=3             # 每次失败后的间隔秒
-CHECK_INTERVAL=30      # 每轮检测间隔
+PING_COUNT=10
+PING_GAP=3
+CHECK_INTERVAL=30
 
 # ===================== 通用工具 =====================
 log() { printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
@@ -157,11 +157,13 @@ api_get_own_record_ip() {
   [ -n "$rip" ] && printf "%s" "$rip" || return 1
 }
 
-# 创建“本机专属”记录（注释 ddns:VPS_ID；创建即写真实 IP；失败回退 0.0.0.0/::0）
+# 创建“本机专属”记录（必须使用真实 WAN IP；不能用占位 0.0.0.0 或 ::0）
 api_create_own_record() {
-  local zone_id="$1" ip fallback_ip data out http body rid
-  fallback_ip=$([ "$CF_RECORD_TYPE" = "AAAA" ] && echo "::0" || echo "0.0.0.0")
-  ip="$(_get_wan_ip || echo "$fallback_ip")"
+  local zone_id="$1" ip="$2" data out http body rid
+  if [ -z "$ip" ]; then
+    log "❌ 创建记录失败：未提供有效公网 IP"
+    return 1
+  fi
   log "为 VPS(${VPS_ID}) 创建专属记录（初始 IP=${ip}）..."
   data=$(printf '{"type":"%s","name":"%s","content":"%s","ttl":%s,"proxied":%s,"comment":"ddns:%s"}' \
         "$CF_RECORD_TYPE" "$CF_RECORD_NAME" "$ip" "$CFTTL" "$PROXIED" "$VPS_ID")
@@ -195,9 +197,9 @@ api_patch_record_content() {
   return 1
 }
 
-# 确保“本机专属记录”存在：优先用缓存 record_id，不存在则创建
+# 确保“本机专属记录”存在（必须传入真实 WAN IP，用它创建）
 ensure_own_record_ready() {
-  local zone_id record_id
+  local zone_id="$1" ip="$2" record_id
   zone_id="$(api_get_zone_id)" || return 1
   if [ -f "$ID_FILE" ]; then
     record_id="$(cat "$ID_FILE" || true)"
@@ -207,7 +209,7 @@ ensure_own_record_ready() {
     fi
     log "⚠️ 缓存 record_id 无效，将重建"
   fi
-  record_id="$(api_create_own_record "$zone_id")" || return 1
+  record_id="$(api_create_own_record "$zone_id" "$ip")" || return 1
   echo "$record_id" > "$ID_FILE"
   printf "%s|%s\n" "$zone_id" "$record_id"
 }
@@ -216,7 +218,8 @@ ensure_own_record_ready() {
 sync_dns_if_needed() {
   local wan_ip zone_id record_id ids own_ip patch_msg
 
-  wan_ip="$(_get_wan_ip)" || { log "❌ 无法获取公网 IP"; return 1; }
+  # 真实公网 IP 必须获取成功，获取不到就直接返回（绝不写入 0.0.0.0 / ::0）
+  wan_ip="$(_get_wan_ip)" || { log "❌ 无法获取公网 IP，跳过本轮"; return 1; }
 
   # 1) 可达时：若“任意记录”已是目标 IP，直接跳过（避免 81058）
   zone_id="$(api_get_zone_id)" || return 1
@@ -226,8 +229,8 @@ sync_dns_if_needed() {
     return 0
   fi
 
-  # 2) 仅维护本机记录：不存在则创建，存在则按需 PATCH
-  ids="$(ensure_own_record_ready)" || return 1
+  # 2) 仅维护本机记录：不存在则用“真实 WAN IP”创建；存在则按需 PATCH
+  ids="$(ensure_own_record_ready "$zone_id" "$wan_ip")" || return 1
   zone_id="${ids%%|*}"
   record_id="${ids##*|}"
 
@@ -251,12 +254,12 @@ sync_dns_if_needed() {
 }
 
 # ===================== 先检测墙 → 再按需处理 DDNS =====================
-log "启动 DDNS 守护进程（多 VPS 友好：只维护本机记录，不删除他人）"
+log "启动 DDNS 守护进程（多 VPS 友好：只维护本机记录，不删除他人；创建/更新一律写真实公网 IP）"
 log "VPS_ID=${VPS_ID}  记录名=${CF_RECORD_NAME}  类型=${CF_RECORD_TYPE}  TTL=${CFTTL}s  PROXIED=${PROXIED}"
 
 while true; do
   if check_ip_reachable; then
-    # 通：只检查是否已解析到当前 IP，有就跳过；否则仅更新本机记录
+    # 通：只检查是否已解析到当前 IP，有就跳过；否则仅更新/创建本机记录（写真实 IP）
     sync_dns_if_needed || true
   else
     # 不通：换 IP（累计），然后再按需同步（同样先查是否已有该 IP）
