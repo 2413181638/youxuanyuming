@@ -72,11 +72,25 @@ fi
 
 case "$PROXIED" in true|false) : ;; *) echo "PROXIED 必须为 true 或 false（当前：$PROXIED）" >&2; exit 2;; esac
 
+validate_ip() {
+  local ip="$1"
+  if [ "$CF_RECORD_TYPE" = "A" ]; then
+    [[ "$ip" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$ ]]
+  else
+    # 简单 IPv6 校验（压缩形式也可）
+    [[ "$ip" =~ ^(([0-9A-Fa-f]{1,4}:){1,7}:?|:((:[0-9A-Fa-f]{1,4}){1,7}))$|^(([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})$ ]]
+  fi
+}
+
 _get_wan_ip() {
   local ip
   ip=$(curl -fsS "$WANIPSITE" || true)
-  [ -z "$ip" ] && return 1
-  _trim "$ip"
+  ip="$(_trim "${ip:-}")"
+  # 严格：拿不到有效公网 IP 就返回失败（绝不写入 0.0.0.0 / ::0）
+  if [ -z "$ip" ] || ! validate_ip "$ip"; then
+    return 1
+  fi
+  printf "%s" "$ip"
 }
 
 # 多目标多次 ping：任意目标任意一次成功即返回 0；全部失败返回 1
@@ -157,16 +171,17 @@ api_get_own_record_ip() {
   [ -n "$rip" ] && printf "%s" "$rip" || return 1
 }
 
-# 创建“本机专属”记录（必须使用真实 WAN IP；不能用占位 0.0.0.0 或 ::0）
+# 创建“本机专属”记录（严格：必须传入合法公网 IP；否则拒绝创建）
 api_create_own_record() {
   local zone_id="$1" ip="$2" data out http body rid
-  if [ -z "$ip" ]; then
-    log "❌ 创建记录失败：未提供有效公网 IP"
+  if [ -z "$ip" ] || ! validate_ip "$ip"; then
+    log "❌ 创建记录被拒绝：未获取到合法公网 IP（绝不写入 0.0.0.0 / ::0）"
     return 1
   fi
   log "为 VPS(${VPS_ID}) 创建专属记录（初始 IP=${ip}）..."
-  data=$(printf '{"type":"%s","name":"%s","content":"%s","ttl":%s,"proxied":%s,"comment":"ddns:%s"}' \
-        "$CF_RECORD_TYPE" "$CF_RECORD_NAME" "$ip" "$CFTTL" "$PROXIED" "$VPS_ID")
+  # 只发必要字段，避免 400
+  data=$(printf '{"type":"%s","name":"%s","content":"%s","ttl":%s,"proxied":%s}' \
+        "$CF_RECORD_TYPE" "$CF_RECORD_NAME" "$ip" "$CFTTL" "$PROXIED")
   out="$(_cf_api POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" "$data")"
   http="${out##*|}"; body="${out%|*}"
   if [ "$http" != "200" ] && [ "$http" != "201" ]; then
@@ -181,26 +196,28 @@ api_create_own_record() {
 # 仅更新必要字段；若遇 81058（完全相同记录已存在）当作成功
 api_patch_record_content() {
   local zone_id="$1" record_id="$2" ip="$3" data out http body
+  if [ -z "$ip" ] || ! validate_ip "$ip"; then
+    echo "ERR|400|invalid ip"
+    return 1
+  fi
   data=$(printf '{"content":"%s","ttl":%s,"proxied":%s}' "$ip" "$CFTTL" "$PROXIED")
   out="$(_cf_api PATCH "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" "$data")"
   http="${out##*|}"; body="${out%|*}"
 
   if [ "$http" = "200" ]; then
-    echo "OK|$body"
-    return 0
+    echo "OK|$body"; return 0
   fi
   if echo "$body" | grep -q '"code":81058'; then
-    echo "OK|$body"
-    return 0
+    echo "OK|$body"; return 0
   fi
-  echo "ERR|${http}|${body}"
-  return 1
+  echo "ERR|${http}|${body}"; return 1
 }
 
-# 确保“本机专属记录”存在（必须传入真实 WAN IP，用它创建）
+# 确保“本机专属记录”存在（必须用真实合法 WAN IP 创建；否则跳过）
 ensure_own_record_ready() {
-  local zone_id="$1" ip="$2" record_id
+  local zone_id ip="$2" record_id
   zone_id="$(api_get_zone_id)" || return 1
+
   if [ -f "$ID_FILE" ]; then
     record_id="$(cat "$ID_FILE" || true)"
     if [ -n "$record_id" ] && api_check_record_exists "$zone_id" "$record_id"; then
@@ -209,6 +226,8 @@ ensure_own_record_ready() {
     fi
     log "⚠️ 缓存 record_id 无效，将重建"
   fi
+
+  # 严格：没有合法 WAN IP 就不创建
   record_id="$(api_create_own_record "$zone_id" "$ip")" || return 1
   echo "$record_id" > "$ID_FILE"
   printf "%s|%s\n" "$zone_id" "$record_id"
@@ -218,8 +237,8 @@ ensure_own_record_ready() {
 sync_dns_if_needed() {
   local wan_ip zone_id record_id ids own_ip patch_msg
 
-  # 真实公网 IP 必须获取成功，获取不到就直接返回（绝不写入 0.0.0.0 / ::0）
-  wan_ip="$(_get_wan_ip)" || { log "❌ 无法获取公网 IP，跳过本轮"; return 1; }
+  # —— 只用真实、且校验合法的公网 IP ——
+  wan_ip="$(_get_wan_ip)" || { log "❌ 未获取到合法公网 IP，跳过本轮（不创建、不更新）"; return 1; }
 
   # 1) 可达时：若“任意记录”已是目标 IP，直接跳过（避免 81058）
   zone_id="$(api_get_zone_id)" || return 1
