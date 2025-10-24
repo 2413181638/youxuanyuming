@@ -24,10 +24,11 @@ WAN_IP_FILE="${STATE_DIR}/cf-wan_ip_${CF_RECORD_NAME}_${VPS_ID}.txt"   # 本机�
 CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"   # 换 IP 计数
 
 # ===================== 连通性检测配置 =====================
-TARGET_DOMAIN="email.163.com"
-PING_COUNT=10
-PING_GAP=3
-CHECK_INTERVAL=30
+# 多目标：任意一个目标有一次 ping 成功 -> 视为“未被墙”
+TARGET_DOMAINS=("email.163.com" "guanjia.qq.com" "weixin.qq.com")
+PING_COUNT=10          # 每个目标最多 ping 次数
+PING_GAP=3             # 每次失败后的间隔秒
+CHECK_INTERVAL=30      # 每轮检测间隔
 
 # ===================== 通用工具 =====================
 log() { printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
@@ -78,17 +79,22 @@ _get_wan_ip() {
   _trim "$ip"
 }
 
+# 多目标多次 ping：任意目标任意一次成功即返回 0；全部失败返回 1
 check_ip_reachable() {
-  log "🔍 检测当前公网IP是否能访问 ${TARGET_DOMAIN}..."
-  for ((i=1;i<=PING_COUNT;i++)); do
-    if ping -c 1 -W 3 "$TARGET_DOMAIN" >/dev/null 2>&1; then
-      log "✅ 第 ${i}/${PING_COUNT} 次 ping 成功 —— 网络正常"
-      return 0
-    else
-      log "⚠️ 第 ${i}/${PING_COUNT} 次 ping 失败"
-      [ $i -lt $PING_COUNT ] && sleep "$PING_GAP"
-    fi
+  log "🔍 连通性检测：目标=${TARGET_DOMAINS[*]}，每个目标最多 ${PING_COUNT} 次"
+  local domain
+  for domain in "${TARGET_DOMAINS[@]}"; do
+    for ((i=1;i<=PING_COUNT;i++)); do
+      if ping -c 1 -W 3 "$domain" >/dev/null 2>&1; then
+        log "✅ ${domain}：第 ${i}/${PING_COUNT} 次 ping 成功 —— 网络判定为【正常】"
+        return 0
+      else
+        log "⚠️  ${domain}：第 ${i}/${PING_COUNT} 次 ping 失败"
+        [ $i -lt $PING_COUNT ] && sleep "$PING_GAP"
+      fi
+    done
   done
+  log "❌ 所有目标均未 ping 通 —— 网络判定为【不通/被墙】"
   return 1
 }
 
