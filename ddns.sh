@@ -29,7 +29,7 @@ PID_FILE="${STATE_DIR}/ddns_${VPS_ID}.pid"                            # 防多�
 
 # ========== 连通性检测 ==========
 # 要检测的目标域名列表
-TARGET_DOMAINS=("email.163.com" "163.com" "tieba.baidu.com")
+TARGET_DOMAINS=("email.163.com" "163.com")
 # 每个目标 ping 3 次
 PING_COUNT=3
 # 每次 ping 之间间隔 1 秒
