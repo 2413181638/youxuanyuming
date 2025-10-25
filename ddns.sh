@@ -28,9 +28,9 @@ CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"  # 更换�
 PID_FILE="${STATE_DIR}/ddns_${VPS_ID}.pid"                            # 防多开
 
 # ========== 连通性检测 ==========
-TARGET_DOMAINS=("email.163.com" "guanjia.qq.com" "weixin.qq.com")
-PING_COUNT=10
-PING_GAP=3
+TARGET_DOMAINS=("email.163.com" "www.bilibili.com" "163.com")
+PING_COUNT=3
+PING_GAP=1
 CHECK_INTERVAL=30
 CHANGE_IP_WAIT=10
 
