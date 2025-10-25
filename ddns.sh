@@ -28,10 +28,15 @@ CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"  # 更换�
 PID_FILE="${STATE_DIR}/ddns_${VPS_ID}.pid"                            # 防多开
 
 # ========== 连通性检测 ==========
+# 要检测的目标域名列表
 TARGET_DOMAINS=("email.163.com" "163.com" "tieba.baidu.com")
+# 每个目标 ping 3 次
 PING_COUNT=3
+# 每次 ping 之间间隔 1 秒
 PING_GAP=1
+# 每轮检测的间隔（秒）
 CHECK_INTERVAL=30
+# 当 IP 变更后等待 10 秒再检测
 CHANGE_IP_WAIT=10
 
 # ========== 常用工具 ==========
