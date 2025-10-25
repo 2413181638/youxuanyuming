@@ -4,16 +4,26 @@ set -o nounset
 set -o pipefail
 
 # ========== 固定配置（注意安全） ==========
-CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
+CF_API_TOKEN="${CF_API_TOKEN:-"iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"}"  # 建议改为仅用环境变量
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
 CF_RECORD_TYPE="A"          # A / AAAA
 CFTTL=120
 PROXIED="false"             # true / false（不带引号进 JSON）
 
-# WAN IP 源
-WANIPSITE_IPV4="http://ipv4.icanhazip.com"
-WANIPSITE_IPV6="http://ipv6.icanhazip.com"
+# ========== 外网 IP 源（多源兜底 + 重试） ==========
+WANIPSITES_IPV4=(
+  "http://ipv4.icanhazip.com"
+  "http://ip4.seeip.org"
+  "http://v4.ident.me"
+  "http://ipv4.myip.wtf/text"
+)
+WANIPSITES_IPV6=(
+  "http://ipv6.icanhazip.com"
+  "http://ip6.seeip.org"
+  "http://v6.ident.me"
+  "http://ipv6.myip.wtf/text"
+)
 
 # ========== 多 VPS 独立状态 ==========
 HOST_SHORT="$(hostname -s 2>/dev/null || echo vps)"
@@ -27,22 +37,31 @@ WAN_IP_FILE="${STATE_DIR}/cf-wan_ip_${CF_RECORD_NAME}_${VPS_ID}.txt"  # 上次�
 CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"  # 更换成功次数
 PID_FILE="${STATE_DIR}/ddns_${VPS_ID}.pid"                            # 防多开
 
-# ========== 连通性检测 ==========
-# 要检测的目标域名列表
-TARGET_DOMAINS=("email.163.com" "163.com")
-# 每个目标 ping 3 次
-PING_COUNT=3
-# 每次 ping 之间间隔 1 秒
-PING_GAP=1
-# 每轮检测的间隔（秒）
-CHECK_INTERVAL=30
-# 当 IP 变更后等待 10 秒再检测
-CHANGE_IP_WAIT=10
+# ========== 连通性检测（更严格） ==========
+# 目标站点：修复了原脚本中 "163.com","tieba.baidu.com" 被当成一个元素的问题
+TARGET_DOMAINS=(
+  "email.163.com"
+  "163.com"
+  "baidu.com"
+  "shui5.cn"
+)
+PING_COUNT=3                   # 对同一域名最多 ping 次数
+PING_GAP=1                     # 同一域名 ping 间隔
+PING_TIMEOUT=3                 # ping 单次等待秒数（-W）
+PING_MIN_OK=2                  # ✅ 本次检测至少有 N 个不同域名各自成功一次，才算“网络正常/没墙”
+RANDOMIZE_DOMAINS=true         # 每轮随机检测顺序，减少偶发影响
+CHECK_INTERVAL=30              # 主循环间隔
+CHANGE_IP_WAIT=10              # 换 IP 触发后等待再取外网 IP
+
+# 可选：对“判定为可达的域名”，再做一次 HTTP 头部请求确认（能 ping 但服务不可用的情况）
+PING_HTTP_CONFIRM="false"      # 默认为 false，需要时改为 true
+HTTP_CHECK_TIMEOUT=5
 
 # ========== 常用工具 ==========
 log(){ printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
 require_token(){ [ -n "$CF_API_TOKEN" ] || { log "❌ CF_API_TOKEN 为空"; exit 2; }; }
 _trim(){ printf "%s" "$1" | tr -d '\r\n'; }
+_has(){ command -v "$1" >/dev/null 2>&1; }
 
 # 防多开
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null || echo 0)" 2>/dev/null; then
@@ -53,7 +72,6 @@ echo $$ > "$PID_FILE"
 trap 'rm -f "$PID_FILE" >/dev/null 2>&1 || true' EXIT
 
 # IP 源选择 & 校验
-if [ "$CF_RECORD_TYPE" = "AAAA" ]; then WANIPSITE="$WANIPSITE_IPV6"; else WANIPSITE="$WANIPSITE_IPV4"; fi
 case "$PROXIED" in true|false) : ;; *) echo "PROXIED 必须为 true 或 false"; exit 2;; esac
 
 validate_ip(){
@@ -61,57 +79,121 @@ validate_ip(){
   if [ "$CF_RECORD_TYPE" = "A" ]; then
     [[ "$ip" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$ ]]
   else
-    [[ "$ip" =~ ^(([0-9A-Fa-f]{1,4}:){1,7}:?|:((:[0-9A-Fa-f]{1,4}){1,7}))$|^(([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})$ ]]
+    # 简化/稳健的 IPv6 判断
+    [[ "$ip" =~ ^([0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}$ ]]
   fi
 }
 
 _get_wan_ip(){
-  local ip; ip=$(curl -fsS "$WANIPSITE" || true); ip="$(_trim "${ip:-}")"
-  [ -n "$ip" ] && validate_ip "$ip" && { printf "%s" "$ip"; return 0; }
+  local sites=()
+  if [ "$CF_RECORD_TYPE" = "AAAA" ]; then
+    sites=("${WANIPSITES_IPV6[@]}")
+  else
+    sites=("${WANIPSITES_IPV4[@]}")
+  fi
+  local s ip
+  for s in "${sites[@]}"; do
+    ip="$(curl -fsS --retry 3 --retry-all-errors --connect-timeout 5 --max-time 10 "$s" || true)"
+    ip="$(_trim "${ip:-}")"
+    if [ -n "$ip" ] && validate_ip "$ip"; then
+      printf "%s" "$ip"
+      return 0
+    fi
+  done
   return 1
 }
 
-# 多域名 ping：任意一次成功 -> 可达
+_http_reachable(){
+  # 对目标域名做一次轻量 HTTP 测试，HTTPS 优先
+  local host="$1"
+  curl -fsS -I --connect-timeout "$HTTP_CHECK_TIMEOUT" --max-time "$HTTP_CHECK_TIMEOUT" "https://$host" >/dev/null 2>&1 \
+  || curl -fsS -I --connect-timeout "$HTTP_CHECK_TIMEOUT" --max-time "$HTTP_CHECK_TIMEOUT" "http://$host" >/dev/null 2>&1
+}
+
 check_ip_reachable(){
-  log "🔍 连通性检测（${TARGET_DOMAINS[*]} × ${PING_COUNT}）"
-  local d i
-  for d in "${TARGET_DOMAINS[@]}"; do
+  # 至少有 PING_MIN_OK 个不同站点在本轮检测中各自成功 ping ≥ 1 次（可选 HTTP 确认）
+  local domains=("${TARGET_DOMAINS[@]}")
+  if $RANDOMIZE_DOMAINS && _has shuf; then
+    # 随机化顺序，减少本地 DNS 缓存/单点异常影响
+    IFS=$'\n' read -r -d '' -a domains < <(printf '%s\n' "${domains[@]}" | shuf && printf '\0')
+  fi
+
+  log "🔍 连通性检测：${#domains[@]} 个站点 × ${PING_COUNT} 次；至少 ${PING_MIN_OK} 个站点成功一次${PING_HTTP_CONFIRM:+（含 HTTP 确认）}"
+
+  local success_hosts=0
+  local d i ok_ping ok_http
+
+  for d in "${domains[@]}"; do
+    ok_ping=0
     for ((i=1;i<=PING_COUNT;i++)); do
-      if ping -c 1 -W 3 "$d" >/dev/null 2>&1; then
-        log "✅ ${d}: 第 ${i}/${PING_COUNT} 次 ping 成功 —— 网络【正常】"
-        return 0
+      if ping -n -c 1 -W "$PING_TIMEOUT" "$d" >/dev/null 2>&1; then
+        ok_ping=1
+        log "✅ ${d}: 第 ${i}/${PING_COUNT} 次 ping 成功"
+        break
       else
         log "⚠️  ${d}: 第 ${i}/${PING_COUNT} 次 ping 失败"
         [ $i -lt $PING_COUNT ] && sleep "$PING_GAP"
       fi
     done
+
+    if [ $ok_ping -eq 1 ]; then
+      if [ "$PING_HTTP_CONFIRM" = "true" ]; then
+        ok_http=0
+        if _http_reachable "$d"; then
+          ok_http=1
+          log "🌐 ${d}: HTTP 连通性确认成功"
+        else
+          log "🕳️  ${d}: HTTP 连通性确认失败（可能仅 ICMP 可达）"
+        fi
+        [ $ok_http -eq 1 ] && success_hosts=$((success_hosts+1))
+      else
+        success_hosts=$((success_hosts+1))
+      fi
+    fi
+
+    if [ "$success_hosts" -ge "$PING_MIN_OK" ]; then
+      log "✅ 连通性达标：本轮已统计到 ${success_hosts} 个站点可达（阈值 ${PING_MIN_OK}）—— 网络【正常】"
+      return 0
+    fi
   done
-  log "❌ 所有目标均未通 —— 网络【不通/被墙】"
+
+  log "❌ 连通性不足：仅 ${success_hosts} 个站点达标（阈值 ${PING_MIN_OK}）—— 网络【不通/被墙】"
   return 1
 }
 
-# ========== Cloudflare 统一 API ==========
+# ========== Cloudflare 统一 API（加重试/超时） ==========
+CF_API_BASE="https://api.cloudflare.com/client/v4"
+CURL_API_COMMON=( -sS --connect-timeout 10 --max-time 30 --retry 3 --retry-all-errors --retry-delay 1 )
 _cf_api(){
   local method="$1" url="$2" data="${3:-}"
   require_token
   if [ -n "$data" ]; then
-    curl -sS -X "$method" "$url" -H "Authorization: Bearer ${CF_API_TOKEN}" \
-      -H "Content-Type: application/json" --data "$data" -w '|%{http_code}'
+    curl "${CURL_API_COMMON[@]}" -X "$method" "$url" \
+      -H "Authorization: Bearer ${CF_API_TOKEN}" -H "Content-Type: application/json" \
+      --data "$data" -w '|%{http_code}'
   else
-    curl -sS -X "$method" "$url" -H "Authorization: Bearer ${CF_API_TOKEN}" \
-      -H "Content-Type: application/json" -w '|%{http_code}'
+    curl "${CURL_API_COMMON[@]}" -X "$method" "$url" \
+      -H "Authorization: Bearer ${CF_API_TOKEN}" -H "Content-Type: application/json" \
+      -w '|%{http_code}'
   fi
 }
 
 ZONE_ID_CACHE=""
+HAVE_JQ=0; _has jq && HAVE_JQ=1
+
 get_zone_id(){
   if [ -n "$ZONE_ID_CACHE" ]; then printf "%s" "$ZONE_ID_CACHE"; return 0; fi
   log "查询 zone_id..."
   local out http body zid
-  out="$(_cf_api GET "https://api.cloudflare.com/client/v4/zones?name=${CF_ZONE_NAME}")"
+  out="$(_cf_api GET "${CF_API_BASE}/zones?name=${CF_ZONE_NAME}")"
   http="${out##*|}"; body="${out%|*}"
   [ "$http" = "200" ] || { log "❌ 获取 zone 失败（HTTP ${http}）：$body"; return 1; }
-  zid=$(echo "$body" | grep -Po '(?<="id":")[^"]*' | head -1 || true)
+
+  if [ $HAVE_JQ -eq 1 ]; then
+    zid="$(printf "%s" "$body" | jq -r '.result[0].id // empty')"
+  else
+    zid=$(echo "$body" | grep -Po '(?<="id":")[^"]*' | head -1 || true)
+  fi
   [ -n "$zid" ] || { log "❌ 未找到 zone_id"; return 1; }
   ZONE_ID_CACHE="$zid"; printf "%s" "$zid"
 }
@@ -119,12 +201,13 @@ get_zone_id(){
 list_records_json(){
   local zone_id="$1"
   local out http body
-  out="$(_cf_api GET "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records?type=${CF_RECORD_TYPE}&name=${CF_RECORD_NAME}&per_page=100")"
+  out="$(_cf_api GET "${CF_API_BASE}/zones/${zone_id}/dns_records?type=${CF_RECORD_TYPE}&name=${CF_RECORD_NAME}&per_page=100")"
   http="${out##*|}"; body="${out%|*}"
-  [ "$http" = "200" ] && printf "%s" "$body" || return 1
+  [ "$http" = "200" ] && printf "%s" "$body" || { log "❌ 列表记录失败（HTTP ${http}）：$body"; return 1; }
 }
 
 extract_id_content_comment(){
+  # jq 不可用时的回退：脆弱但尽量稳健
   awk 'BEGIN{RS="{\"id\":\"";FS="\""} NR>1{ id=$1; cmm=""; cnt="";
        match($0,/"content":"([^"]+)"/,m1); if(m1[1]!="")cnt=m1[1];
        match($0,/"comment":"([^"]+)"/,m2); if(m2[1]!="")cmm=m2[1];
@@ -132,16 +215,15 @@ extract_id_content_comment(){
 }
 
 any_record_has_ip(){
-  local zone_id="$1" ip="$2"
-  local body; body="$(list_records_json "$zone_id" || echo "")"
+  local zone_id="$1" ip="$2" body
+  body="$(list_records_json "$zone_id" || echo "")"
   [ -n "$body" ] || return 1
   echo "$body" | grep -F "\"content\":\"${ip}\"" >/dev/null 2>&1
 }
 
 record_exists(){
-  local zone_id="$1" rid="$2"
-  local out http
-  out="$(_cf_api GET "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${rid}")"
+  local zone_id="$1" rid="$2" out http
+  out="$(_cf_api GET "${CF_API_BASE}/zones/${zone_id}/dns_records/${rid}")"
   http="${out##*|}"
   [ "$http" = "200" ]
 }
@@ -149,7 +231,7 @@ record_exists(){
 patch_record(){
   local zone_id="$1" rid="$2" ip="$3" data out http body
   data=$(printf '{"content":"%s","ttl":%s,"proxied":%s}' "$ip" "$CFTTL" "$PROXIED")
-  out="$(_cf_api PATCH "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${rid}" "$data")"
+  out="$(_cf_api PATCH "${CF_API_BASE}/zones/${zone_id}/dns_records/${rid}" "$data")"
   http="${out##*|}"; body="${out%|*}"
   if [ "$http" = "200" ] || echo "$body" | grep -q '"code":81058'; then return 0; fi
   log "❌ PATCH 失败（HTTP ${http}）：$body"; return 1
@@ -159,10 +241,15 @@ create_record_with_comment(){
   local zone_id="$1" ip="$2" data out http body rid
   data=$(printf '{"type":"%s","name":"%s","content":"%s","ttl":%s,"proxied":%s,"comment":"ddns:%s"}' \
         "$CF_RECORD_TYPE" "$CF_RECORD_NAME" "$ip" "$CFTTL" "$PROXIED" "$VPS_ID")
-  out="$(_cf_api POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" "$data")"
+  out="$(_cf_api POST "${CF_API_BASE}/zones/${zone_id}/dns_records" "$data")"
   http="${out##*|}"; body="${out%|*}"
   [ "$http" = "200" ] || [ "$http" = "201" ] || { log "❌ 创建失败（HTTP ${http}）：$body"; return 1; }
-  rid=$(echo "$body" | grep -Po '(?<="id":")[^"]*' | head -1 || true)
+
+  if [ $HAVE_JQ -eq 1 ]; then
+    rid="$(printf "%s" "$body" | jq -r '.result.id // empty')"
+  else
+    rid=$(echo "$body" | grep -Po '(?<="id":")[^"]*' | head -1 || true)
+  fi
   [ -n "$rid" ] || { log "❌ 创建返回无 id"; return 1; }
   printf "%s" "$rid"
 }
@@ -176,33 +263,42 @@ get_or_create_own_record_id(){
     fi
     log "⚠️ 缓存 record_id 不存在/无效，尝试按 comment 找回"
   fi
+
   body="$(list_records_json "$zone_id" || echo "")"
   if [ -n "$body" ]; then
-    while IFS=$'\t' read -r id content comment; do
-      if printf "%s" "$comment" | grep -q "ddns:${VPS_ID}"; then
-        printf "%s" "$id" > "$ID_FILE"
-        printf "%s" "$id"
-        return 0
-      fi
-    done < <(printf "%s" "$body" | extract_id_content_comment)
+    if [ $HAVE_JQ -eq 1 ]; then
+      while IFS=$'\t' read -r id content comment; do
+        if printf "%s" "$comment" | grep -q "ddns:${VPS_ID}"; then
+          printf "%s" "$id" > "$ID_FILE"
+          printf "%s" "$id"
+          return 0
+        fi
+      done < <(printf "%s" "$body" | jq -r '.result[]|[.id,.content,((.comment//""))]|@tsv')
+    else
+      while IFS=$'\t' read -r id content comment; do
+        if printf "%s" "$comment" | grep -q "ddns:${VPS_ID}"; then
+          printf "%s" "$id" > "$ID_FILE"
+          printf "%s" "$id"
+          return 0
+        fi
+      done < <(printf "%s" "$body" | extract_id_content_comment)
+    fi
   fi
+
   rid="$(create_record_with_comment "$zone_id" "$wan_ip")" || return 1
   printf "%s" "$rid" > "$ID_FILE"
   printf "%s" "$rid"
 }
 
-# ========== 主机名映射的“写死”换 IP 指令 ==========
+# ========== 主机名映射的“写死”换 IP 指令（加超时） ==========
+CHANGE_IP_HTTP_TIMEOUT=5
 _change_ip_by_host(){
-  # 统一用 host 名判断；同时兼容用户提示里“root@xqtw1”的说法
   if [[ "$HOST_SHORT" == *xqtw1* ]] || [[ "$HOST_FULL" == *xqtw1* ]]; then
-    # 第一台：xqtw1
-    curl -fsS 192.168.10.253 >/dev/null
+    curl -fsS --connect-timeout "$CHANGE_IP_HTTP_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" "http://192.168.10.253" >/dev/null
   elif [[ "$HOST_SHORT" == *xqtw2* ]] || [[ "$HOST_FULL" == *xqtw2* ]]; then
-    # 第二台：xqtw2
-    curl -fsS 'http://10.10.8.10/ip/change.php' >/dev/null
+    curl -fsS --connect-timeout "$CHANGE_IP_HTTP_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" 'http://10.10.8.10/ip/change.php' >/dev/null
   else
-    # 未匹配到时，默认走第一台逻辑（你也可改为直接 return 1）
-    curl -fsS 192.168.10.253 >/dev/null
+    curl -fsS --connect-timeout "$CHANGE_IP_HTTP_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" "http://192.168.10.253" >/dev/null
   fi
 }
 
@@ -244,9 +340,13 @@ sync_dns_if_needed(){
   rid="$(get_or_create_own_record_id "$zone_id" "$wan_ip")" || return 1
 
   # 自己这条是否已等于当前 IP
-  body="$(_cf_api GET "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${rid}")"
+  body="$(_cf_api GET "${CF_API_BASE}/zones/${zone_id}/dns_records/${rid}")"
   if [ "${body##*|}" = "200" ]; then
-    own_ip="$(printf "%s" "${body%|*}" | grep -Po '(?<="content":")[^"]*' | head -1 || true)"
+    if [ $HAVE_JQ -eq 1 ]; then
+      own_ip="$(printf "%s" "${body%|*}" | jq -r '.result.content // empty')"
+    else
+      own_ip="$(printf "%s" "${body%|*}" | grep -Po '(?<="content":")[^"]*' | head -1 || true)"
+    fi
     if [ "$own_ip" = "$wan_ip" ]; then
       log "ℹ️ 自身记录已是当前 IP（$wan_ip），跳过更新"
       echo "$wan_ip" > "$WAN_IP_FILE"
