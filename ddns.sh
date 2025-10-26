@@ -38,7 +38,6 @@ CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"  # 更换�
 PID_FILE="${STATE_DIR}/ddns_${VPS_ID}.pid"                            # 防多开
 
 # ========== 连通性检测（更严格） ==========
-# 目标站点：修复了原脚本中 "163.com","tieba.baidu.com" 被当成一个元素的问题
 TARGET_DOMAINS=(
   "email.163.com"
   "163.com"
@@ -48,12 +47,14 @@ TARGET_DOMAINS=(
 PING_COUNT=3                   # 对同一域名最多 ping 次数
 PING_GAP=1                     # 同一域名 ping 间隔
 PING_TIMEOUT=3                 # ping 单次等待秒数（-W）
-PING_MIN_OK=2                  # ✅ 本次检测至少有 N 个不同域名各自成功一次，才算“网络正常/没墙”
+PING_MIN_OK=2                  # ✅ 至少有 N 个不同站点各自成功一次才算“网络正常/没墙”
 RANDOMIZE_DOMAINS=true         # 每轮随机检测顺序，减少偶发影响
 CHECK_INTERVAL=30              # 主循环间隔
-CHANGE_IP_WAIT=10              # 换 IP 触发后等待再取外网 IP
 
-# 可选：对“判定为可达的域名”，再做一次 HTTP 头部请求确认（能 ping 但服务不可用的情况）
+# （已弃用：旧版在触发后固定 sleep 再看 IP，会误判超时。现改为轮询确认。）
+# CHANGE_IP_WAIT=10
+
+# 可选：对“判定为可达的域名”，再做一次 HTTP 头部请求确认（能 ping 不代表业务可用）
 PING_HTTP_CONFIRM="false"      # 默认为 false，需要时改为 true
 HTTP_CHECK_TIMEOUT=5
 
@@ -114,7 +115,6 @@ check_ip_reachable(){
   # 至少有 PING_MIN_OK 个不同站点在本轮检测中各自成功 ping ≥ 1 次（可选 HTTP 确认）
   local domains=("${TARGET_DOMAINS[@]}")
   if $RANDOMIZE_DOMAINS && _has shuf; then
-    # 随机化顺序，减少本地 DNS 缓存/单点异常影响
     IFS=$'\n' read -r -d '' -a domains < <(printf '%s\n' "${domains[@]}" | shuf && printf '\0')
   fi
 
@@ -207,7 +207,7 @@ list_records_json(){
 }
 
 extract_id_content_comment(){
-  # jq 不可用时的回退：脆弱但尽量稳健
+  # jq 不可用时的回退
   awk 'BEGIN{RS="{\"id\":\"";FS="\""} NR>1{ id=$1; cmm=""; cnt="";
        match($0,/"content":"([^"]+)"/,m1); if(m1[1]!="")cnt=m1[1];
        match($0,/"comment":"([^"]+)"/,m2); if(m2[1]!="")cmm=m2[1];
@@ -290,52 +290,65 @@ get_or_create_own_record_id(){
   printf "%s" "$rid"
 }
 
-# ========== 主机名映射的“写死”换 IP 指令（加超时） ==========
-CHANGE_IP_HTTP_TIMEOUT=5
-_change_ip_by_host(){
-  # 将 HOST_SHORT 与 HOST_FULL 拼接后统一匹配，避免重复写判断
+# ========== 换 IP：非阻塞触发 + 轮询确认（更稳健） ==========
+# 触发请求允许更长时间（网关脚本可能边拨号边输出）
+CHANGE_IP_HTTP_TIMEOUT=60
+# 轮询确认窗口与频率
+CHANGE_VERIFY_WINDOW=90      # 触发后最多等待 90s 观察 IP 是否变化
+CHANGE_VERIFY_POLL=5         # 轮询间隔 5s
+CHANGE_IP_MAX_ATTEMPTS=2     # 未变更时最多再触发 1 次（共 2 次）
+CHANGE_IP_REPEAT_DELAY=10    # 两次触发之间缓冲 10s
+
+# 根据主机名选择对应的换 IP URL（含 xqtw3）
+_change_ip_target_url(){
   local host_all="${HOST_SHORT} ${HOST_FULL}"
-  local url=""
-
   case "$host_all" in
-    (*xqtw1*)
-      # 第一台：xqtw1
-      url="http://192.168.10.253"
-      ;;
-    (*xqtw2*|*xqtw3*)
-      # 第二台：xqtw2 与 第三台：xqtw3 —— 同一换 IP 接口
-      url="http://10.10.8.10/ip/change.php"
-      ;;
-    (*)
-      # 未匹配到时，默认走第一台逻辑（可按需改为 return 1）
-      url="http://192.168.10.253"
-      ;;
+    (*xqtw1*) echo "http://192.168.10.253" ;;
+    (*xqtw2*|*xqtw3*) echo "http://10.10.8.10/ip/change.php" ;;
+    (*) echo "http://192.168.10.253" ;;   # 默认第一台逻辑；也可改为: echo ""; return 1
   esac
+}
 
+# 只负责发起一次触发（后台执行，避免阻塞/超时）
+_trigger_change_ip(){
+  local url; url="$(_change_ip_target_url)" || return 1
   log "↻ 触发换 IP：host='${HOST_SHORT}' -> ${url}"
-  curl -fsS --connect-timeout "$CHANGE_IP_HTTP_TIMEOUT" \
-       --max-time "$CHANGE_IP_HTTP_TIMEOUT" \
-       "$url" >/dev/null
+  ( curl -sS --connect-timeout 3 --max-time "$CHANGE_IP_HTTP_TIMEOUT" "$url" >/dev/null 2>&1 ) &
+  return 0
 }
 
 call_change_ip(){
-  local before after
+  local before after deadline try_idx
   before="$(_get_wan_ip || echo "")"
   log "🚀 执行换 IP（按主机名：$HOST_SHORT）..."
-  if ! _change_ip_by_host; then
-    log "⚠️ 换 IP 调用失败（命令返回非 0）"
-  fi
-  sleep "$CHANGE_IP_WAIT"
-  after="$(_get_wan_ip || echo "")"
-  if [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ]; then
-    local n=0; [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" || echo 0)"
-    n=$((n+1)); echo "$n" > "$CHANGE_CNT_FILE"
-    log "📶 判定为【已更换 IP】：${before} -> ${after}（累计 $n 次）"
-    return 0
-  else
-    log "😶 未检测到 IP 变化（before='${before}', after='${after}'）"
-    return 1
-  fi
+
+  for try_idx in $(seq 1 "$CHANGE_IP_MAX_ATTEMPTS"); do
+    if ! _trigger_change_ip; then
+      log "⚠️ 第 ${try_idx} 次触发换 IP 调用失败（未能发起请求）"
+    fi
+
+    # 轮询等待外网 IP 变化
+    deadline=$(( $(date +%s) + CHANGE_VERIFY_WINDOW ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+      sleep "$CHANGE_VERIFY_POLL"
+      after="$(_get_wan_ip || echo "")"
+      if [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ]; then
+        local n=0; [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" || echo 0)"
+        n=$((n+1)); echo "$n" > "$CHANGE_CNT_FILE"
+        log "📶 判定为【已更换 IP】：${before} -> ${after}（累计 $n 次）"
+        return 0
+      fi
+    done
+
+    # 本次窗口内未变化：若还可重试，则等待一会儿再次触发
+    if [ "$try_idx" -lt "$CHANGE_IP_MAX_ATTEMPTS" ]; then
+      log "⏱️ ${CHANGE_VERIFY_WINDOW}s 内未检测到变化，${CHANGE_IP_REPEAT_DELAY}s 后进行第 $((try_idx+1)) 次触发..."
+      sleep "$CHANGE_IP_REPEAT_DELAY"
+    fi
+  done
+
+  log "😶 未检测到 IP 变化（before='${before}', after='${after}'，窗口 ${CHANGE_VERIFY_WINDOW}s × ${CHANGE_IP_MAX_ATTEMPTS} 次触发）"
+  return 1
 }
 
 # ========== 同步核心：多 VPS 版 ==========
@@ -388,7 +401,7 @@ while true; do
     # 可达：仅在需要时更新自己这条（若已有任意记录=当前IP则整轮跳过）
     sync_dns_if_needed || true
   else
-    # 不可达：按主机名写死的换 IP → 再尝试同步
+    # 不可达：触发换 IP（后台）→ 轮询确认 → 再尝试同步
     call_change_ip || true
     sync_dns_if_needed || true
   fi
