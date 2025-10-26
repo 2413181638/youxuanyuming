@@ -293,13 +293,29 @@ get_or_create_own_record_id(){
 # ========== 主机名映射的“写死”换 IP 指令（加超时） ==========
 CHANGE_IP_HTTP_TIMEOUT=5
 _change_ip_by_host(){
-  if [[ "$HOST_SHORT" == *xqtw1* ]] || [[ "$HOST_FULL" == *xqtw1* ]]; then
-    curl -fsS --connect-timeout "$CHANGE_IP_HTTP_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" "http://192.168.10.253" >/dev/null
-  elif [[ "$HOST_SHORT" == *xqtw2* ]] || [[ "$HOST_FULL" == *xqtw2* ]]; then
-    curl -fsS --connect-timeout "$CHANGE_IP_HTTP_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" 'http://10.10.8.10/ip/change.php' >/dev/null
-  else
-    curl -fsS --connect-timeout "$CHANGE_IP_HTTP_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" "http://192.168.10.253" >/dev/null
-  fi
+  # 将 HOST_SHORT 与 HOST_FULL 拼接后统一匹配，避免重复写判断
+  local host_all="${HOST_SHORT} ${HOST_FULL}"
+  local url=""
+
+  case "$host_all" in
+    (*xqtw1*)
+      # 第一台：xqtw1
+      url="http://192.168.10.253"
+      ;;
+    (*xqtw2*|*xqtw3*)
+      # 第二台：xqtw2 与 第三台：xqtw3 —— 同一换 IP 接口
+      url="http://10.10.8.10/ip/change.php"
+      ;;
+    (*)
+      # 未匹配到时，默认走第一台逻辑（可按需改为 return 1）
+      url="http://192.168.10.253"
+      ;;
+  esac
+
+  log "↻ 触发换 IP：host='${HOST_SHORT}' -> ${url}"
+  curl -fsS --connect-timeout "$CHANGE_IP_HTTP_TIMEOUT" \
+       --max-time "$CHANGE_IP_HTTP_TIMEOUT" \
+       "$url" >/dev/null
 }
 
 call_change_ip(){
