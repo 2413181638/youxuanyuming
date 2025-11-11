@@ -45,12 +45,15 @@ TARGET_DOMAINS=(
   "shui5.cn",
   "xiaoshuo.wtzw.com"
 )
-PING_COUNT=1
-PING_GAP=1
-PING_MIN_OK=1
-CHECK_INTERVAL=30
-PING_HTTP_CONFIRM="false"
-HTTP_CHECK_TIMEOUT=5
+PING_COUNT=1              # 每个目标域名 ping 的次数。设为 1 即每轮只 ping 一次，加快检测速度。
+PING_GAP=1                # 多次 ping 同一域名之间的间隔（秒）。仅当 PING_COUNT > 1 时生效。
+PING_MIN_OK=1             # 至少有多少个域名 ping 成功，才认为网络正常。
+                          # 因为你只检测一个目标（xiaoshuo.wtzw.com），这里设为 1 即可。
+CHECK_INTERVAL=300        # 每轮检测的间隔时间（秒）。即脚本检测完一次后，等待 300 秒（5 分钟）再检测下一轮。
+PING_HTTP_CONFIRM="false" # 是否在 ping 成功后，再额外执行一次 HTTP 测试验证（确认网站服务也通）。
+                          # 一般不需要，ping 成功即可认为网络正常。
+HTTP_CHECK_TIMEOUT=5      # HTTP 检测的超时时间（秒）。只有当 PING_HTTP_CONFIRM="true" 时才会用到。
+
 
 # ========== 常用工具 ==========
 log(){ printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
