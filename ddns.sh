@@ -50,10 +50,7 @@ CONFIG_FILE="${STATE_DIR}/ddns.conf"                                  # 可选�
 
 # ========== 连通性检测 ==========
 TARGET_DOMAINS=(
-  "email.163.com"
-  "163.com"
-  "baidu.com"
-  "shui5.cn"
+  "https://xiaoshuo.wtzw.com/"
 )
 PING_COUNT="${PING_COUNT:-3}"            # 对同一域名最多 ping 次数
 PING_GAP="${PING_GAP:-1}"                # 同一域名 ping 间隔
