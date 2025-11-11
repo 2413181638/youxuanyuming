@@ -127,7 +127,7 @@ check_ip_reachable(){
   for d in "${domains[@]}"; do
     ok_ping=0
     for ((i=1;i<=PING_COUNT;i++)); do
-      if ping -n -c 1 -W "$PING_TIMEOUT" "$d" >/dev/null 2>&1; then
+      if ping -n -c 1 -W $((PING_TIMEOUT * 1000)) "$d" >/dev/null 2>&1; then
         ok_ping=1
         log "✅ ${d}: 第 ${i}/${PING_COUNT} 次 ping 成功"
         break
