@@ -47,7 +47,7 @@ TARGET_DOMAINS=(
 )
 PING_COUNT=3                   # 对同一域名最多 ping 次数
 PING_GAP=1                     # 同一域名 ping 间隔
-PING_TIMEOUT=3000                 # ping 单次等待秒数（-W）
+PING_TIMEOUT=300                 # ping 单次等待秒数（-W）
 PING_MIN_OK=2                  # ✅ 至少有 N 个不同站点各自成功一次才算“网络正常/没墙”
 RANDOMIZE_DOMAINS=true         # 每轮随机检测顺序，减少偶发影响
 CHECK_INTERVAL=30              # 主循环间隔
