@@ -413,4 +413,4 @@ while true; do
   fi
   log "⏳ ${CHECK_INTERVAL}s 后再次检测..."
   sleep "$CHECK_INTERVAL"
-done并不完善，还是有在运行的时候没办法给第三个机器换ip，每次都得手动关闭此脚本在执行
+done
