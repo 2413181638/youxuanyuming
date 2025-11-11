@@ -7,11 +7,11 @@ set -o pipefail
 CF_API_TOKEN="${CF_API_TOKEN:-"iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"}"  # 建议改为仅用环境变量
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
-CF_RECORD_TYPE="A"          # A / AAAA
+CF_RECORD_TYPE="A"
 CFTTL=120
-PROXIED="false"             # true / false（不带引号进 JSON）
+PROXIED="false"
 
-# ========== 外网 IP 源（多源兜底 + 重试） ==========
+# ========== 外网 IP 源 ==========
 WANIPSITES_IPV4=(
   "http://ipv4.icanhazip.com"
   "http://ip4.seeip.org"
@@ -32,32 +32,17 @@ VPS_ID="${VPS_ID:-$HOST_SHORT}"
 
 STATE_DIR="${HOME}/.cf-ddns"
 mkdir -p "${STATE_DIR}"
-ID_FILE="${STATE_DIR}/cf-id_${CF_RECORD_NAME}_${VPS_ID}.txt"          # 本机专属 record_id
-WAN_IP_FILE="${STATE_DIR}/cf-wan_ip_${CF_RECORD_NAME}_${VPS_ID}.txt"  # 上次已写入的 IP
-CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"  # 更换成功次数
-PID_FILE="${STATE_DIR}/ddns_${VPS_ID}.pid"                            # 防多开
+ID_FILE="${STATE_DIR}/cf-id_${CF_RECORD_NAME}_${VPS_ID}.txt"
+WAN_IP_FILE="${STATE_DIR}/cf-wan_ip_${CF_RECORD_NAME}_${VPS_ID}.txt"
+CHANGE_CNT_FILE="${STATE_DIR}/cf-change_count_${CF_RECORD_NAME}.txt"
+PID_FILE="${STATE_DIR}/ddns_${VPS_ID}.pid"
 
-# ========== 连通性检测（更严格） ==========
-TARGET_DOMAINS=(
-  "xiaoshuo.wtzw.com"
-  "email.163.com"
-  "163.com"
-  "baidu.com"
-  "shui5.cn"
-)
-PING_COUNT=3                   # 对同一域名最多 ping 次数
-PING_GAP=1                     # 同一域名 ping 间隔
-PING_TIMEOUT=1                 # ping 单次等待秒数（-W）
-PING_MIN_OK=1                  # ✅ 至少有 N 个不同站点各自成功一次才算“网络正常/没墙”
-RANDOMIZE_DOMAINS=true         # 每轮随机检测顺序，减少偶发影响
-CHECK_INTERVAL=30              # 主循环间隔
-
-# （已弃用：旧版在触发后固定 sleep 再看 IP，会误判超时。现改为轮询确认。）
-# CHANGE_IP_WAIT=10
-
-# 可选：对“判定为可达的域名”，再做一次 HTTP 头部请求确认（能 ping 不代表业务可用）
-PING_HTTP_CONFIRM="false"      # 默认为 false，需要时改为 true
-HTTP_CHECK_TIMEOUT=5
+# ========== 检测配置 ==========
+CHECK_INTERVAL=60          # 检测间隔（秒）
+PING_TARGET="www.itdog.cn" # 用于检测是否被大陆封锁的目标
+PING_COUNT=5               # ping 次数
+PING_TIMEOUT=2             # 每次等待秒数
+PING_INTERVAL=0.2          # ping 间隔（秒）
 
 # ========== 常用工具 ==========
 log(){ printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
@@ -73,27 +58,14 @@ fi
 echo $$ > "$PID_FILE"
 trap 'rm -f "$PID_FILE" >/dev/null 2>&1 || true' EXIT
 
-# IP 源选择 & 校验
-case "$PROXIED" in true|false) : ;; *) echo "PROXIED 必须为 true 或 false"; exit 2;; esac
-
+# IP 校验与获取
 validate_ip(){
   local ip="$1"
-  if [ "$CF_RECORD_TYPE" = "A" ]; then
-    [[ "$ip" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$ ]]
-  else
-    # 简化/稳健的 IPv6 判断
-    [[ "$ip" =~ ^([0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}$ ]]
-  fi
+  [[ "$ip" =~ ^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$ ]]
 }
 
 _get_wan_ip(){
-  local sites=()
-  if [ "$CF_RECORD_TYPE" = "AAAA" ]; then
-    sites=("${WANIPSITES_IPV6[@]}")
-  else
-    sites=("${WANIPSITES_IPV4[@]}")
-  fi
-  local s ip
+  local sites=("${WANIPSITES_IPV4[@]}") s ip
   for s in "${sites[@]}"; do
     ip="$(curl -fsS --retry 3 --retry-all-errors --connect-timeout 5 --max-time 10 "$s" || true)"
     ip="$(_trim "${ip:-}")"
@@ -105,66 +77,43 @@ _get_wan_ip(){
   return 1
 }
 
-_http_reachable(){
-  # 对目标域名做一次轻量 HTTP 测试，HTTPS 优先
-  local host="$1"
-  curl -fsS -I --connect-timeout "$HTTP_CHECK_TIMEOUT" --max-time "$HTTP_CHECK_TIMEOUT" "https://$host" >/dev/null 2>&1 \
-  || curl -fsS -I --connect-timeout "$HTTP_CHECK_TIMEOUT" --max-time "$HTTP_CHECK_TIMEOUT" "http://$host" >/dev/null 2>&1
-}
-
+# ========== 检测台湾 IP 是否被大陆墙 + 自动换 IP ==========
 check_ip_reachable(){
-  # 至少有 PING_MIN_OK 个不同站点在本轮检测中各自成功 ping ≥ 1 次（可选 HTTP 确认）
-  local domains=("${TARGET_DOMAINS[@]}")
-  if $RANDOMIZE_DOMAINS && _has shuf; then
-    IFS=$'\n' read -r -d '' -a domains < <(printf '%s\n' "${domains[@]}" | shuf && printf '\0')
-  fi
+  local wan_ip ping_result
+  wan_ip="$(_get_wan_ip)" || { log "❌ 无法获取公网 IP"; return 1; }
 
-  log "🔍 连通性检测：${#domains[@]} 个站点 × ${PING_COUNT} 次；至少 ${PING_MIN_OK} 个站点成功一次${PING_HTTP_CONFIRM:+（含 HTTP 确认）}"
+  log "🔍 检测台湾 IP 是否被大陆墙：${wan_ip}"
+  log "🌏 检测目标站点：${PING_TARGET}"
 
-  local success_hosts=0
-  local d i ok_ping ok_http
+  # 执行 ping 检测
+  ping_result="$(ping -c "$PING_COUNT" -W "$PING_TIMEOUT" -i "$PING_INTERVAL" "$PING_TARGET" 2>/dev/null || true)"
 
-  for d in "${domains[@]}"; do
-    ok_ping=0
-    for ((i=1;i<=PING_COUNT;i++)); do
-      if ping -n -c 1 -W "$PING_TIMEOUT" "$d" >/dev/null 2>&1; then
-        ok_ping=1
-        log "✅ ${d}: 第 ${i}/${PING_COUNT} 次 ping 成功"
-        break
-      else
-        log "⚠️  ${d}: 第 ${i}/${PING_COUNT} 次 ping 失败"
-        [ $i -lt $PING_COUNT ] && sleep "$PING_GAP"
-      fi
-    done
+  if echo "$ping_result" | grep -q "100% packet loss"; then
+    log "❌ 当前 IP (${wan_ip}) 已被大陆封锁，尝试自动换 IP..."
+    call_change_ip || log "⚠️ 调用换 IP 失败"
+    log "⏳ 等待 10 秒后重新检测..."
+    sleep 10
 
-    if [ $ok_ping -eq 1 ]; then
-      if [ "$PING_HTTP_CONFIRM" = "true" ]; then
-        ok_http=0
-        if _http_reachable "$d"; then
-          ok_http=1
-          log "🌐 ${d}: HTTP 连通性确认成功"
-        else
-          log "🕳️  ${d}: HTTP 连通性确认失败（可能仅 ICMP 可达）"
-        fi
-        [ $ok_http -eq 1 ] && success_hosts=$((success_hosts+1))
-      else
-        success_hosts=$((success_hosts+1))
-      fi
-    fi
-
-    if [ "$success_hosts" -ge "$PING_MIN_OK" ]; then
-      log "✅ 连通性达标：本轮已统计到 ${success_hosts} 个站点可达（阈值 ${PING_MIN_OK}）—— 网络【正常】"
+    # 再次检测是否恢复
+    wan_ip="$(_get_wan_ip)" || { log "❌ 无法获取新公网 IP"; return 1; }
+    ping_result="$(ping -c "$PING_COUNT" -W "$PING_TIMEOUT" -i "$PING_INTERVAL" "$PING_TARGET" 2>/dev/null || true)"
+    if echo "$ping_result" | grep -q "100% packet loss"; then
+      log "🚫 新 IP (${wan_ip}) 仍被墙，等待下次循环重试"
+      return 1
+    else
+      log "✅ 新 IP (${wan_ip}) 已恢复正常访问"
       return 0
     fi
-  done
-
-  log "❌ 连通性不足：仅 ${success_hosts} 个站点达标（阈值 ${PING_MIN_OK}）—— 网络【不通/被墙】"
-  return 1
+  else
+    log "✅ 当前 IP (${wan_ip}) 未被封锁，网络正常"
+    return 0
+  fi
 }
 
-# ========== Cloudflare 统一 API（加重试/超时） ==========
+# ========== Cloudflare 统一 API ==========
 CF_API_BASE="https://api.cloudflare.com/client/v4"
 CURL_API_COMMON=( -sS --connect-timeout 10 --max-time 30 --retry 3 --retry-all-errors --retry-delay 1 )
+
 _cf_api(){
   local method="$1" url="$2" data="${3:-}"
   require_token
@@ -205,14 +154,6 @@ list_records_json(){
   out="$(_cf_api GET "${CF_API_BASE}/zones/${zone_id}/dns_records?type=${CF_RECORD_TYPE}&name=${CF_RECORD_NAME}&per_page=100")"
   http="${out##*|}"; body="${out%|*}"
   [ "$http" = "200" ] && printf "%s" "$body" || { log "❌ 列表记录失败（HTTP ${http}）：$body"; return 1; }
-}
-
-extract_id_content_comment(){
-  # jq 不可用时的回退
-  awk 'BEGIN{RS="{\"id\":\"";FS="\""} NR>1{ id=$1; cmm=""; cnt="";
-       match($0,/"content":"([^"]+)"/,m1); if(m1[1]!="")cnt=m1[1];
-       match($0,/"comment":"([^"]+)"/,m2); if(m2[1]!="")cmm=m2[1];
-       if(id!="")printf("%s\t%s\t%s\n",id,cnt,cmm); }'
 }
 
 any_record_has_ip(){
@@ -282,7 +223,7 @@ get_or_create_own_record_id(){
           printf "%s" "$id"
           return 0
         fi
-      done < <(printf "%s" "$body" | extract_id_content_comment)
+      done < <(printf "%s" "$body" | awk 'BEGIN{RS="{\"id\":\"";FS="\""} NR>1{ id=$1; match($0,/"comment":"([^"]+)"/,m); if(id!="")printf("%s\t%s\n",id,m[1]); }')
     fi
   fi
 
@@ -291,26 +232,22 @@ get_or_create_own_record_id(){
   printf "%s" "$rid"
 }
 
-# ========== 换 IP：非阻塞触发 + 轮询确认（更稳健） ==========
-# 触发请求允许更长时间（网关脚本可能边拨号边输出）
+# ========== 换 IP ==========
 CHANGE_IP_HTTP_TIMEOUT=60
-# 轮询确认窗口与频率
-CHANGE_VERIFY_WINDOW=90      # 触发后最多等待 90s 观察 IP 是否变化
-CHANGE_VERIFY_POLL=5         # 轮询间隔 5s
-CHANGE_IP_MAX_ATTEMPTS=2     # 未变更时最多再触发 1 次（共 2 次）
-CHANGE_IP_REPEAT_DELAY=10    # 两次触发之间缓冲 10s
+CHANGE_VERIFY_WINDOW=90
+CHANGE_VERIFY_POLL=5
+CHANGE_IP_MAX_ATTEMPTS=2
+CHANGE_IP_REPEAT_DELAY=10
 
-# 根据主机名选择对应的换 IP URL（含 xqtw3）
 _change_ip_target_url(){
   local host_all="${HOST_SHORT} ${HOST_FULL}"
   case "$host_all" in
     (*xqtw1*) echo "http://192.168.10.253" ;;
     (*xqtw2*|*xqtw3*) echo "http://10.10.8.10/ip/change.php" ;;
-    (*) echo "http://192.168.10.253" ;;   # 默认第一台逻辑；也可改为: echo ""; return 1
+    (*) echo "http://192.168.10.253" ;;
   esac
 }
 
-# 只负责发起一次触发（后台执行，避免阻塞/超时）
 _trigger_change_ip(){
   local url; url="$(_change_ip_target_url)" || return 1
   log "↻ 触发换 IP：host='${HOST_SHORT}' -> ${url}"
@@ -321,14 +258,10 @@ _trigger_change_ip(){
 call_change_ip(){
   local before after deadline try_idx
   before="$(_get_wan_ip || echo "")"
-  log "🚀 执行换 IP（按主机名：$HOST_SHORT）..."
+  log "🚀 执行换 IP（主机=${HOST_SHORT}）..."
 
   for try_idx in $(seq 1 "$CHANGE_IP_MAX_ATTEMPTS"); do
-    if ! _trigger_change_ip; then
-      log "⚠️ 第 ${try_idx} 次触发换 IP 调用失败（未能发起请求）"
-    fi
-
-    # 轮询等待外网 IP 变化
+    _trigger_change_ip || log "⚠️ 第 ${try_idx} 次触发失败"
     deadline=$(( $(date +%s) + CHANGE_VERIFY_WINDOW ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
       sleep "$CHANGE_VERIFY_POLL"
@@ -336,81 +269,50 @@ call_change_ip(){
       if [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ]; then
         local n=0; [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" || echo 0)"
         n=$((n+1)); echo "$n" > "$CHANGE_CNT_FILE"
-        log "📶 判定为【已更换 IP】：${before} -> ${after}（累计 $n 次）"
+        log "📶 已更换 IP：${before} -> ${after}（累计 $n 次）"
         return 0
       fi
     done
-
-    # 本次窗口内未变化：若还可重试，则等待一会儿再次触发
-    if [ "$try_idx" -lt "$CHANGE_IP_MAX_ATTEMPTS" ]; then
-      log "⏱️ ${CHANGE_VERIFY_WINDOW}s 内未检测到变化，${CHANGE_IP_REPEAT_DELAY}s 后进行第 $((try_idx+1)) 次触发..."
-      sleep "$CHANGE_IP_REPEAT_DELAY"
-    fi
+    log "⏱️ ${CHANGE_VERIFY_WINDOW}s 内未变化，重试..."
+    sleep "$CHANGE_IP_REPEAT_DELAY"
   done
-
-  log "😶 未检测到 IP 变化（before='${before}', after='${after}'，窗口 ${CHANGE_VERIFY_WINDOW}s × ${CHANGE_IP_MAX_ATTEMPTS} 次触发）"
+  log "😶 未检测到 IP 变化"
   return 1
 }
 
-# ========== 同步核心：多 VPS 版 ==========
+# ========== Cloudflare 同步 ==========
 sync_dns_if_needed(){
   local wan_ip zone_id rid body own_ip
-
-  wan_ip="$(_get_wan_ip)" || { log "❌ 未获合法公网 IP，跳过"; return 1; }
+  wan_ip="$(_get_wan_ip)" || { log "❌ 无法获取公网 IP"; return 1; }
   zone_id="$(get_zone_id)" || return 1
 
-  # 若任意同名记录已有当前 IP → 整轮跳过
   if any_record_has_ip "$zone_id" "$wan_ip"; then
-    log "ℹ️ 已有同名记录等于当前 IP（$wan_ip），跳过本轮"
+    log "ℹ️ 当前记录已是 ${wan_ip}，跳过更新"
     echo "$wan_ip" > "$WAN_IP_FILE"
     return 0
   fi
 
-  # 只维护“本机这条”
   rid="$(get_or_create_own_record_id "$zone_id" "$wan_ip")" || return 1
-
-  # 自己这条是否已等于当前 IP
-  body="$(_cf_api GET "${CF_API_BASE}/zones/${zone_id}/dns_records/${rid}")"
-  if [ "${body##*|}" = "200" ]; then
-    if [ $HAVE_JQ -eq 1 ]; then
-      own_ip="$(printf "%s" "${body%|*}" | jq -r '.result.content // empty')"
-    else
-      own_ip="$(printf "%s" "${body%|*}" | grep -Po '(?<="content":")[^"]*' | head -1 || true)"
-    fi
-    if [ "$own_ip" = "$wan_ip" ]; then
-      log "ℹ️ 自身记录已是当前 IP（$wan_ip），跳过更新"
-      echo "$wan_ip" > "$WAN_IP_FILE"
-      return 0
-    fi
-  fi
-
-  # 更新自己这条
   if patch_record "$zone_id" "$rid" "$wan_ip"; then
-    log "✅ 已更新自身记录：${CF_RECORD_NAME} -> ${wan_ip}  [id=${rid}]"
+    log "✅ 已更新记录：${CF_RECORD_NAME} -> ${wan_ip} [id=${rid}]"
     echo "$wan_ip" > "$WAN_IP_FILE"
   else
-    log "❌ 更新失败（不影响其它机器记录）"
+    log "❌ 更新失败"
   fi
 }
 
 # ========== 主循环 ==========
-log "启动 DDNS（主机=${HOST_FULL} / VPS_ID=${VPS_ID}）"
-log "记录=${CF_RECORD_NAME}  类型=${CF_RECORD_TYPE}  TTL=${CFTTL}s  PROXIED=${PROXIED}"
+log "🚀 启动 DDNS（主机=${HOST_FULL} / VPS_ID=${VPS_ID}）"
+log "记录=${CF_RECORD_NAME} 类型=${CF_RECORD_TYPE} TTL=${CFTTL}s PROXIED=${PROXIED}"
 
 while true; do
   if check_ip_reachable; then
-    # 可达：仅在需要时更新自己这条（若已有任意记录=当前IP则整轮跳过）
     sync_dns_if_needed || true
   else
-    # 不可达：触发换 IP（后台）→ 轮询确认 → 再尝试同步
-    call_change_ip || true
     sync_dns_if_needed || true
   fi
 
-  # 展示累计换 IP 次数
-  if [ -f "$CHANGE_CNT_FILE" ]; then
-    log "📊 累计更换 IP 次数：$(cat "$CHANGE_CNT_FILE" || echo 0)"
-  fi
+  [ -f "$CHANGE_CNT_FILE" ] && log "📊 累计换 IP 次数：$(cat "$CHANGE_CNT_FILE")"
   log "⏳ ${CHECK_INTERVAL}s 后再次检测..."
   sleep "$CHECK_INTERVAL"
 done
