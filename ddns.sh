@@ -39,10 +39,10 @@ PID_FILE="${STATE_DIR}/ddns_${VPS_ID}.pid"                            # 防多�
 
 # ========== 连通性检测（更严格） ==========
 TARGET_DOMAINS=(
-  "xiaoshuo.wtzw.com"
-  "email.163.com"
-  "163.com"
-  "baidu.com"
+  "xiaoshuo.wtzw.com",
+  "email.163.com",
+  "163.com",
+  "baidu.com",
   "shui5.cn"
 )
 PING_COUNT=3                   # 对同一域名最多 ping 次数
