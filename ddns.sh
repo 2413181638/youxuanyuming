@@ -50,7 +50,7 @@ CONFIG_FILE="${STATE_DIR}/ddns.conf"                                  # 可选�
 
 # ========== 连通性检测 ==========
 TARGET_DOMAINS=(
-  "https://xiaoshuo.wtzw.com/"
+  "xiaoshuo.wtzw.com"
 )
 PING_COUNT="${PING_COUNT:-3}"            # 对同一域名最多 ping 次数
 PING_GAP="${PING_GAP:-1}"                # 同一域名 ping 间隔
