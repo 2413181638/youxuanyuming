@@ -4,7 +4,8 @@ set -o nounset
 set -o pipefail
 
 # ========== 固定配置（注意安全） ==========
-CF_API_TOKEN="${CF_API_TOKEN:-"iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"}"  # 建议改为仅用环境变量
+# ✅ 必须用环境变量传入 CF_API_TOKEN，脚本里不再写死
+CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
 CF_RECORD_TYPE="A"
@@ -46,7 +47,7 @@ PING_INTERVAL=0.2          # ping 间隔（秒）
 
 # ========== 常用工具 ==========
 log(){ printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
-require_token(){ [ -n "$CF_API_TOKEN" ] || { log "❌ CF_API_TOKEN 为空"; exit 2; }; }
+require_token(){ [ -n "$CF_API_TOKEN" ] || { log "❌ CF_API_TOKEN 为空，请用环境变量传入"; exit 2; }; }
 _trim(){ printf "%s" "$1" | tr -d '\r\n'; }
 _has(){ command -v "$1" >/dev/null 2>&1; }
 
@@ -132,7 +133,10 @@ ZONE_ID_CACHE=""
 HAVE_JQ=0; _has jq && HAVE_JQ=1
 
 get_zone_id(){
-  if [ -n "$ZONE_ID_CACHE" ]; then printf "%s" "$ZONE_ID_CACHE"; return 0; fi
+  if [ -n "$ZONE_ID_CACHE" ]; then
+    printf "%s" "$ZONE_ID_CACHE"
+    return 0
+  fi
   log "查询 zone_id..."
   local out http body zid
   out="$(_cf_api GET "${CF_API_BASE}/zones?name=${CF_ZONE_NAME}")"
@@ -145,7 +149,8 @@ get_zone_id(){
     zid=$(echo "$body" | grep -Po '(?<="id":")[^"]*' | head -1 || true)
   fi
   [ -n "$zid" ] || { log "❌ 未找到 zone_id"; return 1; }
-  ZONE_ID_CACHE="$zid"; printf "%s" "$zid"
+  ZONE_ID_CACHE="$zid"
+  printf "%s" "$zid"
 }
 
 list_records_json(){
@@ -154,13 +159,6 @@ list_records_json(){
   out="$(_cf_api GET "${CF_API_BASE}/zones/${zone_id}/dns_records?type=${CF_RECORD_TYPE}&name=${CF_RECORD_NAME}&per_page=100")"
   http="${out##*|}"; body="${out%|*}"
   [ "$http" = "200" ] && printf "%s" "$body" || { log "❌ 列表记录失败（HTTP ${http}）：$body"; return 1; }
-}
-
-any_record_has_ip(){
-  local zone_id="$1" ip="$2" body
-  body="$(list_records_json "$zone_id" || echo "")"
-  [ -n "$body" ] || return 1
-  echo "$body" | grep -F "\"content\":\"${ip}\"" >/dev/null 2>&1
 }
 
 record_exists(){
@@ -175,8 +173,11 @@ patch_record(){
   data=$(printf '{"content":"%s","ttl":%s,"proxied":%s}' "$ip" "$CFTTL" "$PROXIED")
   out="$(_cf_api PATCH "${CF_API_BASE}/zones/${zone_id}/dns_records/${rid}" "$data")"
   http="${out##*|}"; body="${out%|*}"
-  if [ "$http" = "200" ] || echo "$body" | grep -q '"code":81058'; then return 0; fi
-  log "❌ PATCH 失败（HTTP ${http}）：$body"; return 1
+  if [ "$http" = "200" ] || echo "$body" | grep -q '"code":81058'; then
+    return 0
+  fi
+  log "❌ PATCH 失败（HTTP ${http}）：$body"
+  return 1
 }
 
 create_record_with_comment(){
@@ -197,11 +198,13 @@ create_record_with_comment(){
 }
 
 get_or_create_own_record_id(){
-  local zone_id="$1" wan_ip="$2" rid body id content comment
+  local zone_id="$1" wan_ip="$2" rid body id comment
+  # 先用缓存的 ID
   if [ -f "$ID_FILE" ]; then
     rid="$(cat "$ID_FILE" || true)"
     if [ -n "$rid" ] && record_exists "$zone_id" "$rid"; then
-      printf "%s" "$rid"; return 0
+      printf "%s" "$rid"
+      return 0
     fi
     log "⚠️ 缓存 record_id 不存在/无效，尝试按 comment 找回"
   fi
@@ -209,24 +212,33 @@ get_or_create_own_record_id(){
   body="$(list_records_json "$zone_id" || echo "")"
   if [ -n "$body" ]; then
     if [ $HAVE_JQ -eq 1 ]; then
-      while IFS=$'\t' read -r id content comment; do
+      # jq 分支：输出 id 和 comment 两列
+      while IFS=$'\t' read -r id comment; do
         if printf "%s" "$comment" | grep -q "ddns:${VPS_ID}"; then
           printf "%s" "$id" > "$ID_FILE"
           printf "%s" "$id"
           return 0
         fi
-      done < <(printf "%s" "$body" | jq -r '.result[]|[.id,.content,((.comment//""))]|@tsv')
+      done < <(printf "%s" "$body" | jq -r '.result[]|[.id,((.comment//""))]|@tsv')
     else
-      while IFS=$'\t' read -r id content comment; do
+      # ❗ 修复：awk 分支只读两列（id 和 comment），不再读错列
+      while IFS=$'\t' read -r id comment; do
         if printf "%s" "$comment" | grep -q "ddns:${VPS_ID}"; then
           printf "%s" "$id" > "$ID_FILE"
           printf "%s" "$id"
           return 0
         fi
-      done < <(printf "%s" "$body" | awk 'BEGIN{RS="{\"id\":\"";FS="\""} NR>1{ id=$1; match($0,/"comment":"([^"]+)"/,m); if(id!="")printf("%s\t%s\n",id,m[1]); }')
+      done < <(printf "%s" "$body" | awk '
+        BEGIN{RS="{\"id\":\"";FS="\""}
+        NR>1{
+          id=$1
+          match($0,/"comment":"([^"]*)"/,m)
+          if(id!="") printf("%s\t%s\n", id, m[1])
+        }')
     fi
   fi
 
+  # 没有找到属于自己的记录 -> 创建一条
   rid="$(create_record_with_comment "$zone_id" "$wan_ip")" || return 1
   printf "%s" "$rid" > "$ID_FILE"
   printf "%s" "$rid"
@@ -267,8 +279,10 @@ call_change_ip(){
       sleep "$CHANGE_VERIFY_POLL"
       after="$(_get_wan_ip || echo "")"
       if [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ]; then
-        local n=0; [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" || echo 0)"
-        n=$((n+1)); echo "$n" > "$CHANGE_CNT_FILE"
+        local n=0
+        [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" || echo 0)"
+        n=$((n+1))
+        echo "$n" > "$CHANGE_CNT_FILE"
         log "📶 已更换 IP：${before} -> ${after}（累计 $n 次）"
         return 0
       fi
@@ -282,17 +296,18 @@ call_change_ip(){
 
 # ========== Cloudflare 同步 ==========
 sync_dns_if_needed(){
-  local wan_ip zone_id rid body own_ip
+  local wan_ip zone_id rid
   wan_ip="$(_get_wan_ip)" || { log "❌ 无法获取公网 IP"; return 1; }
-  zone_id="$(get_zone_id)" || return 1
 
-  if any_record_has_ip "$zone_id" "$wan_ip"; then
-    log "ℹ️ 当前记录已是 ${wan_ip}，跳过更新"
-    echo "$wan_ip" > "$WAN_IP_FILE"
+  # ✅ 使用本地缓存避免重复更新
+  if [ -f "$WAN_IP_FILE" ] && [ "$(cat "$WAN_IP_FILE" 2>/dev/null || echo "")" = "$wan_ip" ]; then
+    log "ℹ️ 公网 IP 未变化（${wan_ip}），跳过 Cloudflare 更新"
     return 0
   fi
 
+  zone_id="$(get_zone_id)" || return 1
   rid="$(get_or_create_own_record_id "$zone_id" "$wan_ip")" || return 1
+
   if patch_record "$zone_id" "$rid" "$wan_ip"; then
     log "✅ 已更新记录：${CF_RECORD_NAME} -> ${wan_ip} [id=${rid}]"
     echo "$wan_ip" > "$WAN_IP_FILE"
@@ -309,6 +324,7 @@ while true; do
   if check_ip_reachable; then
     sync_dns_if_needed || true
   else
+    # 即使被墙，还是尝试同步 DNS，方便切 IP 后直接可用
     sync_dns_if_needed || true
   fi
 
