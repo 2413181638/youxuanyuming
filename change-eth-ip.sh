@@ -1,153 +1,72 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
-# 全自动公网 IP 轮换脚本
-# - 自动识别默认网关
-# - 自动识别所有有 IPv4 的物理网卡
-# - 在多块网卡之间轮流切换默认路由
-# - 保证只有一个实例在跑：新实例会干掉旧实例并接管
-# ---------------------------------------------------------
+# 自动切换公网 IP（每 1 分钟），自动识别网卡和 IP 地址
+# 保证脚本只有一个实例在运行，重复运行会重启当前实例
+# ------------------------------------------
 
-LOCK_FILE="/tmp/ip_switch.lock"
-LOG_FILE="/var/log/ip_switch.log"
-INTERVAL=60     # 切换间隔（秒）
+LOCK_FILE="/tmp/ip_switch.lock"  # 锁文件路径
+LOG_FILE="/var/log/ip_switch.log" # 日志文件
 
-# 如果不是 root，就用 sudo；否则不用
-if [[ $EUID -ne 0 ]]; then
-  SUDO="sudo"
-else
-  SUDO=""
+# 自动识别默认网关
+GATEWAY=$(ip route | grep default | awk '{print $3}')
+
+# 检查锁文件，确保只有一个脚本实例在运行
+if [ -f "$LOCK_FILE" ] && kill -0 $(cat "$LOCK_FILE"); then
+    echo "🔄 脚本已经在运行，重新启动当前实例..." | tee -a "$LOG_FILE"
+    # 重启脚本
+    kill -HUP $(cat "$LOCK_FILE")
+    exit 0
 fi
 
-log() {
-  echo "[$(date '+%F %T')] $*" | tee -a "$LOG_FILE"
-}
-
-get_public_ip() {
-  # 带超时 + 兜底的公网 IP 获取
-  curl -m 5 -s -4 https://ifconfig.me \
-    || curl -m 5 -s -4 https://api.ipify.org \
-    || echo "unknown"
-}
-
-get_default_dev() {
-  ip route show default 2>/dev/null | awk '/default/ {print $5; exit}'
-}
-
-get_default_gw() {
-  ip route show default 2>/dev/null | awk '/default/ {print $3; exit}'
-}
-
-# 在 interfaces 数组中找到“当前网卡”的下一个，用来轮换
-get_next_dev() {
-  local cur="$1"
-  local idx=""
-  local i
-
-  for i in "${!interfaces[@]}"; do
-    if [[ "${interfaces[$i]}" == "$cur" ]]; then
-      idx="$i"
-      break
-    fi
-  done
-
-  # 如果没找到当前网卡，就从第一个开始
-  if [[ -z "$idx" ]]; then
-    echo "${interfaces[0]}"
-    return
-  fi
-
-  local next=$(( (idx + 1) % ${#interfaces[@]} ))
-  echo "${interfaces[$next]}"
-}
-
-# ========== 单实例控制 ==========
-
-if [[ -f "$LOCK_FILE" ]]; then
-  old_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
-  if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
-    log "检测到已有实例 (PID=$old_pid)，终止旧实例并接管..."
-    kill "$old_pid" 2>/dev/null || true
-    sleep 1
-  fi
-fi
-
+# 创建锁文件并记录脚本的进程 ID
 echo $$ > "$LOCK_FILE"
 
-cleanup() {
-  rm -f "$LOCK_FILE"
-}
-trap cleanup EXIT INT TERM
+# 获取所有网卡接口（自动识别所有网卡）
+interfaces=($(ip -o link show | awk -F': ' '{print $2}' | grep -E 'eth[0-9]+'))
 
-# ========== 自动识别默认网关 ==========
+# 获取当前的公网 IP
+CURRENT_IP=$(curl -s -4 ifconfig.me)
 
-GATEWAY=$(get_default_gw)
-if [[ -z "$GATEWAY" ]]; then
-  log "未检测到默认网关，无法自动配置路由，退出。"
-  exit 1
-fi
-log "检测到默认网关: $GATEWAY"
+# 日志输出
+echo "🔁 启动自动切换公网 IP，每 1 分钟一次..." | tee -a "$LOG_FILE"
 
-# ========== 自动识别可用网卡 ==========
+# 获取当前默认的入站 IP（默认为 eth0 或第一个有效网卡）
+DEFAULT_IN_IP=$(ip addr show "${interfaces[0]}" | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
 
-# 1. 把有 IPv4 地址的全局网卡捞出来
-# 2. 排除 lo / docker / veth / 虚拟桥接等
-mapfile -t interfaces < <(
-  ip -4 -o addr show scope global \
-  | awk '{print $2}' \
-  | sort -u \
-  | grep -Ev '^(lo|docker[0-9]*|veth.*|br-.*|virbr.*|wg.*|tun.*|tap.*)$'
-)
-
-# 只保留状态为 UP 的网卡
-tmp=()
-for dev in "${interfaces[@]}"; do
-  state=$(ip link show "$dev" | awk '/state/ {print $9}')
-  if [[ "$state" == "UP" ]]; then
-    tmp+=("$dev")
-  fi
-done
-interfaces=("${tmp[@]}")
-
-if ((${#interfaces[@]} < 2)); then
-  log "可用物理网卡（UP、有 IPv4）少于 2 个：${interfaces[*]:-无}，无法轮流切换，退出。"
-  exit 1
-fi
-
-log "可用网卡列表: ${interfaces[*]}"
-log "启动自动切换公网 IP，间隔 ${INTERVAL}s"
-
-# ========== 主循环 ==========
-
+# 循环执行 IP 切换
 while true; do
-  cur_dev=$(get_default_dev)
-  if [[ -z "$cur_dev" ]]; then
-    cur_dev="${interfaces[0]}"
-  fi
+    # 获取当前网卡的内网 IP（只取第一个有效网卡）
+    PRIV_IP=$(ip addr show "${interfaces[0]}" | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
 
-  next_dev=$(get_next_dev "$cur_dev")
+    # 获取当前公网 IP 地址
+    CURRENT_IP=$(curl -s -4 ifconfig.me)
 
-  PRIV_IP=$(ip -4 addr show "$next_dev" | awk '/inet / {print $2}' | cut -d/ -f1 | head -n1)
-  PUB_IP_BEFORE=$(get_public_ip)
+    # 日志输出
+    echo "➡️ $(date '+%F %T') 当前公网 IP: $CURRENT_IP (内网 $PRIV_IP, 网卡 ${interfaces[0]})" | tee -a "$LOG_FILE"
 
-  log "当前默认网卡: ${cur_dev:-无}，即将切换到: $next_dev (内网 IP: ${PRIV_IP:-N/A}, 切换前公网 IP: $PUB_IP_BEFORE)"
-
-  # 清理所有默认路由
-  $SUDO ip route del default 2>/dev/null || true
-
-  # 为下一个网卡添加默认路由（主用）
-  $SUDO ip route add default via "$GATEWAY" dev "$next_dev" metric 1
-
-  # 其他网卡添加备份路由（更高 metric）
-  for d in "${interfaces[@]}"; do
-    if [[ "$d" != "$next_dev" ]]; then
-      $SUDO ip route add default via "$GATEWAY" dev "$d" metric 100 2>/dev/null || true
+    # 切换到另一个网卡
+    if [ "${interfaces[0]}" == "eth0" ]; then
+        DEV="eth1"
+    else
+        DEV="eth0"
     fi
-  done
 
-  sleep 3
-  PUB_IP_AFTER=$(get_public_ip)
-  log "切换完成，新公网 IP: $PUB_IP_AFTER"
-  log "------------------------------------"
+    # 设置新的默认路由，切换网卡的出站流量
+    echo "➡️ 切换到网卡 $DEV" | tee -a "$LOG_FILE"
+    sudo ip route del default 2>/dev/null || true
+    sudo ip route add default via $GATEWAY dev $DEV metric 1
 
-  sleep "$INTERVAL"
+    # 保持备用路由到默认网卡（不改变入站流量的 IP）
+    sudo ip route add default via $GATEWAY dev ${interfaces[0]} metric 100 2>/dev/null || true
+
+    # 检查新的公网 IP
+    sleep 2
+    NEW_IP=$(curl -s -4 ifconfig.me)
+    echo "✅ 当前出网公网 IP: $NEW_IP" | tee -a "$LOG_FILE"
+    echo "------------------------------------" | tee -a "$LOG_FILE"
+
+    sleep 60
 done
+
+# 删除锁文件（仅当脚本结束时）
+rm -f "$LOCK_FILE"
