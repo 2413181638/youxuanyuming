@@ -51,9 +51,11 @@ while true; do
         DEV="eth0"
     fi
 
+    # 删除旧的默认路由，防止重复添加
+    sudo ip route del default 2>/dev/null || true
+
     # 设置新的默认路由，切换网卡的出站流量
     echo "➡️ 切换到网卡 $DEV" | tee -a "$LOG_FILE"
-    sudo ip route del default 2>/dev/null || true
     sudo ip route add default via $GATEWAY dev $DEV metric 1
 
     # 保持备用路由到默认网卡（不改变入站流量的 IP）
