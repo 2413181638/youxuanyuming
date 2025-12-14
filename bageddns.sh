@@ -49,7 +49,9 @@ do
         echo "当前 IP 未被封锁，无需更换."
     fi
 
-    echo "$(date '+%F %T') - 本次检测完成，等待下一次..."
+    # 计算离下一次检查还有多久
+    next_check_in="3分钟"
+    echo "$(date '+%F %T') - 本次检测完成，等待 $next_check_in 后再次检测..."
 
     # 每 3 分钟执行一次
     sleep 180
