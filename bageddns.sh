@@ -1,41 +1,56 @@
 #!/bin/bash
 
-# 确保只有一个脚本实例在运行
+#####################################
+# 脚本名称: bageddns.sh
+# 功能: 检查 IP 是否封锁, 如果封锁则使用 BageVM API 重置 IP
+# 确保脚本只能运行一个实例
+#####################################
+
 LOCKFILE="/tmp/bageddns.lock"
 
-# 检查是否已经有实例在运行
+# 如果锁文件存在，则退出
 if [ -e "$LOCKFILE" ]; then
-    echo "脚本已经在运行，退出执行。"
+    echo "$(date '+%F %T') - 脚本已在运行中，退出。"
     exit 1
-else
-    # 创建锁文件，表示脚本正在运行
-    touch "$LOCKFILE"
-    echo "开始运行脚本..."
+fi
 
-    # 获取当前 IP 地址
+# 创建锁文件
+touch "$LOCKFILE"
+
+# 捕获脚本退出时删除锁文件
+trap "rm -f $LOCKFILE" EXIT
+
+# 循环执行
+while true
+do
+    echo "$(date '+%F %T') - 脚本开始执行..."
+
+    # 获取当前公网 IP
     ip_address=$(curl -s ifconfig.me)
-    echo "当前IP地址: $ip_address"
+    echo "当前 IP: $ip_address"
 
-    # 执行 ping 命令并检查结果
-    if ping -c 5 -W 2 -i 0.2 www.itdog.cn | grep "100% packet loss" > /dev/null
-    then
-        echo "当前IP已经被封锁，正在尝试换IP..."
+    # 检查 IP 是否被封锁
+    if ping -c 5 -W 2 -i 0.2 www.itdog.cn | grep "100% packet loss" > /dev/null; then
+        echo "检测到 IP 可能被封锁，尝试更换 IP..."
 
-        # 使用 BageVM API 请求重置 IP
+        # 调用 BageVM API 重置 IP
         response=$(curl -s "https://www.bagevm.com/index.php?m=hinet&vmip=$ip_address&apikey=9a312e84dfe6571400e37193ac06a2da&action=restip")
-        
-        # 检查返回结果
+
+        echo "接口返回: $response"
+
+        # 判断是否成功重置
         if echo "$response" | grep -q '"status":"1000"'; then
-            new_ip=$(echo "$response" | grep -oP '"mainip":"\K[0-9\.]+')
-            echo "IP已经成功更换，新IP地址: $new_ip"
+            new_ip=$(echo "$response" | grep -oP '"mainip":"\K[0-9.]+')
+            echo "IP 重置成功! 新 IP: $new_ip"
         else
-            echo "换IP失败，返回信息: $response"
+            echo "IP 重置失败，请检查返回内容或 API KEY 是否有效."
         fi
     else
-        echo "当前IP未被封锁"
+        echo "当前 IP 未被封锁，无需更换."
     fi
 
-    # 删除锁文件，表示脚本已完成
-    rm -f "$LOCKFILE"
-    echo "脚本执行完毕。"
-fi
+    echo "$(date '+%F %T') - 本次检测完成，等待下一次..."
+
+    # 每 3 分钟执行一次
+    sleep 180
+done
