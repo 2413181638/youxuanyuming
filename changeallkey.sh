@@ -1,32 +1,53 @@
-
 #!/bin/bash
 
-# --- 1. 配置新值 (在这里修改即可) ---
-NEW_URL="xianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn"
-NEW_KEY='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
+# 1. 禁用历史展开（防止感叹号报错）
+set +o histexpand
 
-CONF="/etc/V2bX/config.json"
+# 2. 配置区域：使用【单引号】锁定字符串，防止 $ & * 被解析
+TARGETS=(
+  "/etc/V2bX/config.json"
+  "/etc/XrayR/config.yml"
+)
 
-if [ ! -f "$CONF" ]; then
-    echo "❌ 找不到配置文件: $CONF"
-    exit 1
-fi
+# 旧的 Token 和新的 Token
+export OLD_TOKEN='xianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn'
+export NEW_TOKEN='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
 
-echo "🔄 正在解锁并修正配置..."
+# 同时修改 IP 协议
+OLD_URL='https://8.137.161.100:50000'
+NEW_URL='http://8.137.161.100:50000'
 
-# 解锁、备份、修改
-chattr -i "$CONF" 2>/dev/null
-cp -a "$CONF" "${CONF}.bak"
+echo "🚀 开始执行强力替换..."
 
-# 强力替换 ApiKey 和 ApiHost
-export K="$NEW_KEY"
-export U="$NEW_URL"
-perl -i -pe 's|"ApiKey":\s*"[^"]*"|"ApiKey": "$ENV{K}"|g; s|"ApiHost":\s*"[^"]*"|"ApiHost": "$ENV{U}"|g' "$CONF"
+for FILE in "${TARGETS[@]}"; do
+  if [ ! -f "$FILE" ]; then
+    echo "❌ $FILE 不存在，跳过"
+    continue
+  fi
 
-# 验证
-if grep -qF "$NEW_KEY" "$CONF"; then
-    echo "✅ 替换成功！"
-    v2bx restart
-else
-    echo "❌ 替换失败，请手动检查文件权限。"
-fi
+  # --- 少了这一步：解除文件只读锁定 ---
+  chattr -i "$FILE" 2>/dev/null
+
+  # --- 改进匹配逻辑：使用 -F (固定字符串) 确保特殊符号不被当成正则 ---
+  if grep -Fq "$OLD_TOKEN" "$FILE" || grep -Fq "$OLD_URL" "$FILE"; then
+    cp -a "$FILE" "$FILE.bak"
+
+    # --- 核心改进：使用环境变量传参，完全避免 Shell 转义问题 ---
+    # 这一步同时修改 URL 和 Token
+    perl -i -pe "s|\Q$OLD_URL\E|$NEW_URL|g" "$FILE"
+    perl -i -pe 'BEGIN { $old = $ENV{OLD_TOKEN}; $new = $ENV{NEW_TOKEN} } s/\Q$old\E/$new/g' "$FILE"
+
+    # 验证是否包含新值
+    if grep -Fq "$NEW_TOKEN" "$FILE"; then
+      echo "✅ $FILE: 替换成功"
+    else
+      echo "⚠️ $FILE: 修改异常，请检查文件内容"
+    fi
+  else
+    echo "ℹ️ $FILE: 未发现旧值（可能已修改或 Token 不匹配）"
+  fi
+done
+
+echo "---"
+v2bx restart && echo "✅ V2bX 重启完成"
+xrayr restart 2>/dev/null || echo "ℹ️ XrayR 重启跳过（命令不存在）"
