@@ -1,32 +1,32 @@
+
 #!/bin/bash
-set +o histexpand  # 避免历史展开
 
-TARGETS=(
-  "/etc/V2bX/config.json"
-  "/etc/XrayR/config.yml"
-)
+# --- 1. 配置新值 (在这里修改即可) ---
+NEW_URL="xianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn"
+NEW_KEY='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
 
-OLD_TEXT='xianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn'
-NEW_TEXT='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
+CONF="/etc/V2bX/config.json"
 
-for FILE in "${TARGETS[@]}"; do
-  if [ ! -f "$FILE" ]; then
-    echo "❌ $FILE 不存在，跳过"
-    continue
-  fi
+if [ ! -f "$CONF" ]; then
+    echo "❌ 找不到配置文件: $CONF"
+    exit 1
+fi
 
-  if grep -Fq "$OLD_TEXT" "$FILE"; then
-    cp -a "$FILE" "$FILE.bak"
-    perl -0777 -i -pe "s/\Q$OLD_TEXT\E/$NEW_TEXT/g" "$FILE"
-    if grep -Fq "$NEW_TEXT" "$FILE"; then
-      echo "✅ $FILE: 替换成功"
-    else
-      echo "⚠️ $FILE: 找到旧值，但替换后未检测到新值"
-    fi
-  else
-    echo "ℹ️ $FILE: 未找到旧值（无需替换）"
-  fi
-done
+echo "🔄 正在解锁并修正配置..."
 
-v2bx restart
-xrayr restart
+# 解锁、备份、修改
+chattr -i "$CONF" 2>/dev/null
+cp -a "$CONF" "${CONF}.bak"
+
+# 强力替换 ApiKey 和 ApiHost
+export K="$NEW_KEY"
+export U="$NEW_URL"
+perl -i -pe 's|"ApiKey":\s*"[^"]*"|"ApiKey": "$ENV{K}"|g; s|"ApiHost":\s*"[^"]*"|"ApiHost": "$ENV{U}"|g' "$CONF"
+
+# 验证
+if grep -qF "$NEW_KEY" "$CONF"; then
+    echo "✅ 替换成功！"
+    v2bx restart
+else
+    echo "❌ 替换失败，请手动检查文件权限。"
+fi
