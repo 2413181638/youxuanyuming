@@ -6,8 +6,8 @@ TARGETS=(
   "/etc/XrayR/config.yml"
 )
 
-OLD_TEXT='xnhttx.523562.xyz'
-NEW_TEXT='xntx.523562.xyz'
+OLD_TEXT='xntx.523562.xyz'
+NEW_TEXT='xnhttx.523562.xyz'
 
 for FILE in "${TARGETS[@]}"; do
   if [ ! -f "$FILE" ]; then
