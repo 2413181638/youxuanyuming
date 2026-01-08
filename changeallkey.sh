@@ -7,7 +7,7 @@ TARGETS=(
 )
 
 OLD_TEXT='xntx.523562.xyz'
-NEW_TEXT='xnhttx.523562.xyz'
+NEW_TEXT='8.137.161.100:50000'
 
 for FILE in "${TARGETS[@]}"; do
   if [ ! -f "$FILE" ]; then
