@@ -6,7 +6,7 @@ TARGETS=(
   "/etc/XrayR/config.yml"
 )
 
-OLD_TEXT='xntx.523562.xyz'
+OLD_TEXT='xnhttx.523562.xyz'
 NEW_TEXT='8.137.161.100:50000'
 
 for FILE in "${TARGETS[@]}"; do
