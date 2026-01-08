@@ -9,8 +9,8 @@ TARGETS=(
 )
 
 # 使用正则表达式兼容可能存在的末尾斜杠
-OLD_PATTERN='https://8.137.161.100:50000'
-NEW_TEXT='http://8.137.161.100:50000'
+OLD_PATTERN='xianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn'
+NEW_TEXT='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
 
 # =========================================================
 # 执行逻辑
