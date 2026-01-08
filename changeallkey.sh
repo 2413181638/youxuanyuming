@@ -6,7 +6,7 @@ TARGETS=(
   "/etc/XrayR/config.yml"
 )
 
-OLD_TEXT='xnhttx.523562.xyzxianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn'
+OLD_TEXT='xianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn'
 NEW_TEXT='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
 
 for FILE in "${TARGETS[@]}"; do
