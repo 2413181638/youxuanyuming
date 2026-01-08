@@ -1,68 +1,37 @@
 #!/bin/bash
 
-# =========================================================
-# 配置区域
-# =========================================================
+# --- 只要修改这里的内容 ---
+# 不管是 IP 还是 Token，通通写在单引号里
+OLD='xianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn'
+NEW='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
+
 TARGETS=(
   "/etc/V2bX/config.json"
   "/etc/XrayR/config.yml"
 )
 
-# 使用正则表达式兼容可能存在的末尾斜杠
-OLD_PATTERN='xianni04$&**(D())_E____++>?><>K$%^?>ASGHrexghn'
-NEW_TEXT='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
+# --------------------------
+export OLD_STR="$OLD"
+export NEW_STR="$NEW"
 
-# =========================================================
-# 执行逻辑
-# =========================================================
-
-# 确保以 root 权限运行
-if [ "$EUID" -ne 0 ]; then 
-  echo "❌ 请使用 sudo 或 root 用户运行此脚本"
-  exit 1
-fi
-
-echo "🚀 开始检查并替换配置..."
+echo "🚀 正在执行 1:1 暴力替换..."
 
 for FILE in "${TARGETS[@]}"; do
-  if [ ! -f "$FILE" ]; then
-    echo "ℹ️  文件不存在: $FILE (跳过)"
-    continue
-  fi
+  if [ ! -f "$FILE" ]; then continue; fi
 
-  # 1. 尝试解除文件可能存在的“只读不可修改”属性 (部分镜像可能锁定配置)
-  chattr -i "$FILE" > /dev/null 2>&1
+  # 解锁文件
+  chattr -i "$FILE" 2>/dev/null
 
-  # 2. 检查是否真的包含旧文本 (不区分大小写)
-  if grep -qiF "$OLD_PATTERN" "$FILE"; then
-    echo "🔍 发现目标: $FILE"
-    
-    # 备份
-    cp -a "$FILE" "$FILE.bak"
-    
-    # 3. 使用 sed 执行替换
-    # 使用 | 作为分隔符，避免 URL 中 / 的转义麻烦
-    sed -i "s|https://8.137.161.100:50000|http://8.137.161.100:50000|g" "$FILE"
-    
-    # 4. 验证结果
-    if grep -qF "$NEW_TEXT" "$FILE"; then
-      echo "✅ 修改成功: $FILE"
-    else
-      echo "❌ 修改失败: $FILE (可能是权限或编码问题)"
-    fi
+  # 使用 Perl 的 quotemeta 功能：
+  # 它会自动把你 Token 里乱七八糟的 $ & * ( ) 全部转义，当成普通字符处理
+  perl -i -pe 'BEGIN { $old = $ENV{OLD_STR}; $new = $ENV{NEW_STR} } s/\Q$old\E/$new/g' "$FILE"
+
+  # 验证
+  if grep -qF "$NEW" "$FILE"; then
+    echo "✅ $FILE: 替换成功"
   else
-    # 额外检查：是否已经是 http 了？
-    if grep -qF "$NEW_TEXT" "$FILE"; then
-      echo "ℹ️  无需修改: $FILE 已经是 http"
-    else
-      echo "❓ 未找到指定 IP: $FILE (请检查 IP 是否正确)"
-    fi
+    echo "❌ $FILE: 替换失败（可能是没找到旧字符串，或者文件被锁定）"
   fi
 done
 
-echo "---"
-echo "🔄 正在重启服务..."
-v2bx restart && echo "✅ V2bX 已重启" || echo "⚠️ V2bX 重启失败"
-xrayr restart && echo "✅ XrayR 已重启" || echo "⚠️ XrayR 重启失败"
-
-echo "✨ 任务完成！"
+v2bx restart
