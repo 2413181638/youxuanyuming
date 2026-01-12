@@ -14,8 +14,8 @@ export OLD_TOKEN='xianniK9#m&P!7q@Az^5*R_v2W=L+x8[Y]f{H}N|s?gJt>'
 export NEW_TOKEN='xianniK9a1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t02026v2bx'
 
 # 同时修改 IP 协议
-OLD_URL='https://xnhttx.523562.xyz'
-NEW_URL='https://xn-awsjp.6653222.xyz'
+OLD_URL='https://xn-awsjp.6653222.xyz'
+NEW_URL='https://xnhttx.523562.xyz'
 
 echo "🚀 开始执行强力替换..."
 
