@@ -14,8 +14,8 @@ export OLD_TOKEN='sytx.3651250.xyz'
 export NEW_TOKEN='sytx.354873.xyz'
 
 # 同时修改 IP 协议
-OLD_URL='https://xn-awsjp.6653222.xyz'
-NEW_URL='https://xnhttx.523562.xyz'
+OLD_URL='https://sytx.3651250.xyz'
+NEW_URL='https://sytx.354873.xyz'
 
 echo "🚀 开始执行强力替换..."
 
