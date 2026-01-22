@@ -10,8 +10,8 @@ TARGETS=(
 )
 
 # 旧的 Token 和新的 Token
-export OLD_TOKEN='sytx.3651250.xyz'
-export NEW_TOKEN='sytx.354873.xyz'
+export OLD_TOKEN='xqtx.okjnd.com'
+export NEW_TOKEN='xqtx.825332.xyz'
 
 # 同时修改 IP 协议
 OLD_URL='https://sytx.3651250.xyz'
