@@ -10,8 +10,8 @@ TARGETS=(
 )
 
 # 旧的 Token 和新的 Token
-export OLD_TOKEN='xqtx.okjnd.com'
-export NEW_TOKEN='xqtx.825332.xyz'
+export OLD_TOKEN='xqtx.825332.xyz'
+export NEW_TOKEN='xqtx.okjnd.com'
 
 # 同时修改 IP 协议
 OLD_URL='https://xqtx.825332.xyz'
