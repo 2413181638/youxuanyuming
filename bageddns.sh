@@ -778,6 +778,7 @@ EOF_SERVICE
 
 install_files() {
   mkdir -p "$INSTALL_DIR" "$CONF_DIR" "$RUN_DIR" "$STATE_DIR" "$LOG_DIR"
+
   write_config
   write_worker
   write_control
