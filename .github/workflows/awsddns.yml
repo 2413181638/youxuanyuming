@@ -1,4 +1,4 @@
-name: DDNS Update
+name: AWSDDNS Update
 
 on:
   schedule:
