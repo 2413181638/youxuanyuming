@@ -2,85 +2,111 @@ name: DDNS Update
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # 每 5 分钟跑一次（GitHub Actions 最短间隔）
+    - cron: '*/5 * * * *'  # 每 5 分钟触发，内部循环 5 次 = 每分钟检测一次
   workflow_dispatch:        # 支持手动触发
 
 jobs:
   ddns:
     runs-on: ubuntu-latest
     steps:
-      - name: 从 aws.sb 获取 IP
-        id: get_ip
+      - name: DDNS 循环检测（5 次，每次间隔 60 秒）
         run: |
-          CACHE_BUSTER=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 12)
-          RESPONSE=$(curl -s --max-time 10 \
-            -H "x-share-group-token: ${{ secrets.AWS_SB_SGT }}" \
-            -H "x-region-name: ap-east-1" \
-            -H "Referer: https://aws.sb/" \
-            -H "Origin: https://aws.sb" \
-            "https://api.aws.sb/ec2-instances/${{ secrets.AWS_SB_INSTANCE }}?r=${CACHE_BUSTER}")
+          CF_API_TOKEN="${{ secrets.CF_API_TOKEN }}"
+          CF_DOMAIN="${{ secrets.CF_DOMAIN }}"
+          CF_ZONE_NAME="${{ secrets.CF_ZONE_NAME }}"
+          AWS_SB_SGT="${{ secrets.AWS_SB_SGT }}"
 
-          NEW_IP=$(echo "$RESPONSE" | jq -r '.publicIpAddress // .ipAddress')
-          if [ -z "$NEW_IP" ] || [ "$NEW_IP" = "null" ]; then
-            echo "错误: 无法获取 IP"
-            exit 1
-          fi
-          echo "new_ip=$NEW_IP" >> $GITHUB_OUTPUT
-          echo "获取到 IP: $NEW_IP"
-
-      - name: 查询 CF 当前记录
-        id: get_dns
-        run: |
-          # 获取 Zone ID
+          # 提前获取 Zone ID（只查一次）
           ZONE_ID=$(curl -s --max-time 10 \
-            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
-            "https://api.cloudflare.com/client/v4/zones?name=${{ secrets.CF_ZONE_NAME }}" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/zones?name=$CF_ZONE_NAME" \
             | jq -r '.result[0].id')
-          echo "zone_id=$ZONE_ID" >> $GITHUB_OUTPUT
 
-          # 获取当前记录
-          RECORD_INFO=$(curl -s --max-time 10 \
-            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
-            "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=${{ secrets.CF_DOMAIN }}&type=A")
-
-          RECORD_ID=$(echo "$RECORD_INFO" | jq -r '.result[0].id')
-          OLD_IP=$(echo "$RECORD_INFO" | jq -r '.result[0].content')
-          echo "record_id=$RECORD_ID" >> $GITHUB_OUTPUT
-          echo "old_ip=$OLD_IP" >> $GITHUB_OUTPUT
-          echo "CF 当前 IP: $OLD_IP"
-
-      - name: 更新 DNS（如果 IP 变了）
-        if: steps.get_ip.outputs.new_ip != steps.get_dns.outputs.old_ip
-        run: |
-          NEW_IP="${{ steps.get_ip.outputs.new_ip }}"
-          ZONE_ID="${{ steps.get_dns.outputs.zone_id }}"
-          RECORD_ID="${{ steps.get_dns.outputs.record_id }}"
-          DOMAIN="${{ secrets.CF_DOMAIN }}"
-
-          if [ "$RECORD_ID" = "null" ] || [ -z "$RECORD_ID" ]; then
-            echo "创建新 A 记录..."
-            METHOD="POST"
-            URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records"
-          else
-            echo "更新 A 记录..."
-            METHOD="PUT"
-            URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID"
-          fi
-
-          RESULT=$(curl -s --max-time 10 -X "$METHOD" \
-            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            "$URL" \
-            --data "{\"type\":\"A\",\"name\":\"$DOMAIN\",\"content\":\"$NEW_IP\",\"ttl\":60,\"proxied\":false}")
-
-          SUCCESS=$(echo "$RESULT" | jq -r '.success')
-          if [ "$SUCCESS" = "true" ]; then
-            echo "✓ DNS 更新成功: $DOMAIN → $NEW_IP"
-          else
-            echo "✗ 更新失败: $(echo "$RESULT" | jq -r '.errors')"
+          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" = "null" ]; then
+            echo "错误: 无法获取 Zone ID"
             exit 1
           fi
+          echo "Zone ID: $ZONE_ID"
 
-      - name: IP 未变化
-        if: steps.get_ip.outputs.new_ip == steps.get_dns.outputs.old_ip
-        run: echo "IP 未变化 (${{ steps.get_ip.outputs.new_ip }})，跳过更新"
+          for i in 1 2 3 4 5; do
+            echo ""
+            echo "===== 第 ${i}/5 次检测 [$(date '+%H:%M:%S')] ====="
+
+            # 1. 自动发现实例 ID 和 region
+            R1=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 12)
+            SHARES=$(curl -s --max-time 10 \
+              -H "x-share-group-token: $AWS_SB_SGT" \
+              -H "Referer: https://aws.sb/" \
+              -H "Origin: https://aws.sb" \
+              "https://api.aws.sb/ec2-instance-shares?r=${R1}")
+
+            INSTANCE_ID=$(echo "$SHARES" | jq -r '.[0].instanceId')
+            REGION=$(echo "$SHARES" | jq -r '.[0].regionName')
+
+            if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "null" ]; then
+              echo "警告: 无法获取实例信息，跳过本轮"
+              [ $i -lt 5 ] && sleep 60
+              continue
+            fi
+            echo "发现实例: $INSTANCE_ID ($REGION)"
+
+            # 2. 获取该实例的 IP
+            R2=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 12)
+            RESPONSE=$(curl -s --max-time 10 \
+              -H "x-share-group-token: $AWS_SB_SGT" \
+              -H "x-region-name: $REGION" \
+              -H "Referer: https://aws.sb/" \
+              -H "Origin: https://aws.sb" \
+              "https://api.aws.sb/ec2-instances/${INSTANCE_ID}?r=${R2}")
+
+            NEW_IP=$(echo "$RESPONSE" | jq -r '.publicIpAddress // .ipAddress')
+            if [ -z "$NEW_IP" ] || [ "$NEW_IP" = "null" ]; then
+              echo "警告: 无法获取 IP，跳过本轮"
+              [ $i -lt 5 ] && sleep 60
+              continue
+            fi
+            echo "aws.sb IP: $NEW_IP"
+
+            # 3. 查 CF 当前记录
+            RECORD_INFO=$(curl -s --max-time 10 \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$CF_DOMAIN&type=A")
+
+            RECORD_ID=$(echo "$RECORD_INFO" | jq -r '.result[0].id')
+            OLD_IP=$(echo "$RECORD_INFO" | jq -r '.result[0].content')
+            echo "CF 当前 IP: ${OLD_IP}"
+
+            # 4. 对比
+            if [ "$NEW_IP" = "$OLD_IP" ]; then
+              echo "IP 未变化，跳过"
+            else
+              echo "IP 变化: $OLD_IP → $NEW_IP，更新中..."
+
+              if [ "$RECORD_ID" = "null" ] || [ -z "$RECORD_ID" ]; then
+                METHOD="POST"
+                URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records"
+              else
+                METHOD="PUT"
+                URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID"
+              fi
+
+              RESULT=$(curl -s --max-time 10 -X "$METHOD" \
+                -H "Authorization: Bearer $CF_API_TOKEN" \
+                -H "Content-Type: application/json" \
+                "$URL" \
+                --data "{\"type\":\"A\",\"name\":\"$CF_DOMAIN\",\"content\":\"$NEW_IP\",\"ttl\":60,\"proxied\":false}")
+
+              SUCCESS=$(echo "$RESULT" | jq -r '.success')
+              if [ "$SUCCESS" = "true" ]; then
+                echo "✓ DNS 更新成功: $CF_DOMAIN → $NEW_IP"
+              else
+                echo "✗ 更新失败: $(echo "$RESULT" | jq -r '.errors')"
+              fi
+            fi
+
+            # 最后一轮不用等
+            [ $i -lt 5 ] && sleep 60
+          done
+
+          echo ""
+          echo "===== 本轮 5 次检测完毕 ====="
