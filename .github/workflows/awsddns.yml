@@ -12,10 +12,10 @@ concurrency:
 jobs:
   ddns:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
 
     steps:
-      - name: DDNS 循环检测（5 次，每次间隔 60 秒）
+      - name: DDNS 单次检测
         shell: bash
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
@@ -58,124 +58,115 @@ jobs:
           require_secret CF_ZONE_NAME
           require_secret AWS_SB_SGT
 
-          # 先取 Zone ID
           ZONE_ID=$(curl_json \
             "https://api.cloudflare.com/client/v4/zones?name=${CF_ZONE_NAME}" \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             | jq -r '.result[0].id // empty')
 
           if [ -z "$ZONE_ID" ]; then
-            echo "错误: 无法获取 Zone ID，请检查 CF_ZONE_NAME 和 Token 权限"
+            log "错误: 无法获取 Zone ID，请检查 CF_ZONE_NAME 和 Token 权限"
             exit 1
           fi
 
           log "Zone ID: $ZONE_ID"
+          log "===== 开始单次检测 ====="
 
-          for i in 1 2 3 4 5; do
-            log "===== 第 ${i}/5 次检测 ====="
+          # 1. 获取实例列表
+          R1=$(rand12 "shares")
+          SHARES=$(curl_json \
+            "https://api.aws.sb/ec2-instance-shares?r=${R1}" \
+            -H "x-share-group-token: ${AWS_SB_SGT}" \
+            -H "Referer: https://aws.sb/" \
+            -H "Origin: https://aws.sb" \
+          ) || {
+            log "错误: 获取实例列表失败"
+            exit 1
+          }
 
-            # 1. 获取实例列表
-            R1=$(rand12 "${i}-shares")
-            SHARES=$(curl_json \
-              "https://api.aws.sb/ec2-instance-shares?r=${R1}" \
-              -H "x-share-group-token: ${AWS_SB_SGT}" \
-              -H "Referer: https://aws.sb/" \
-              -H "Origin: https://aws.sb" \
-            ) || {
-              log "警告: 获取实例列表失败，跳过本轮"
-              [ "$i" -lt 5 ] && sleep 60
-              continue
-            }
+          INSTANCE_ID=$(echo "$SHARES" | jq -r '.[0].instanceId // empty')
+          REGION=$(echo "$SHARES" | jq -r '.[0].regionName // empty')
 
-            INSTANCE_ID=$(echo "$SHARES" | jq -r '.[0].instanceId // empty')
-            REGION=$(echo "$SHARES" | jq -r '.[0].regionName // empty')
+          if [ -z "$INSTANCE_ID" ] || [ -z "$REGION" ]; then
+            log "错误: 实例信息为空"
+            echo "$SHARES" | jq .
+            exit 1
+          fi
 
-            if [ -z "$INSTANCE_ID" ] || [ -z "$REGION" ]; then
-              log "警告: 实例信息为空，跳过本轮"
-              echo "$SHARES" | jq .
-              [ "$i" -lt 5 ] && sleep 60
-              continue
-            fi
+          log "发现实例: $INSTANCE_ID ($REGION)"
 
-            log "发现实例: $INSTANCE_ID ($REGION)"
+          # 2. 获取该实例 IPv4
+          R2=$(rand12 "instance")
+          RESPONSE=$(curl_json \
+            "https://api.aws.sb/ec2-instances/${INSTANCE_ID}?r=${R2}" \
+            -H "x-share-group-token: ${AWS_SB_SGT}" \
+            -H "x-region-name: ${REGION}" \
+            -H "Referer: https://aws.sb/" \
+            -H "Origin: https://aws.sb" \
+          ) || {
+            log "错误: 获取实例详情失败"
+            exit 1
+          }
 
-            # 2. 获取该实例 IPv4
-            R2=$(rand12 "${i}-instance")
-            RESPONSE=$(curl_json \
-              "https://api.aws.sb/ec2-instances/${INSTANCE_ID}?r=${R2}" \
-              -H "x-share-group-token: ${AWS_SB_SGT}" \
-              -H "x-region-name: ${REGION}" \
-              -H "Referer: https://aws.sb/" \
-              -H "Origin: https://aws.sb" \
-            ) || {
-              log "警告: 获取实例详情失败，跳过本轮"
-              [ "$i" -lt 5 ] && sleep 60
-              continue
-            }
+          NEW_IP=$(echo "$RESPONSE" | jq -r '.publicIpAddress // .ipAddress // empty')
 
-            NEW_IP=$(echo "$RESPONSE" | jq -r '.publicIpAddress // .ipAddress // empty')
+          if ! [[ "$NEW_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            log "错误: IP 解析失败"
+            echo "$RESPONSE" | jq .
+            exit 1
+          fi
 
-            if ! [[ "$NEW_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-              log "警告: IP 解析失败，跳过本轮"
-              echo "$RESPONSE" | jq .
-              [ "$i" -lt 5 ] && sleep 60
-              continue
-            fi
+          log "aws.sb IP: $NEW_IP"
 
-            log "aws.sb IP: $NEW_IP"
+          # 3. 查 CF 当前 A 记录
+          RECORD_INFO=$(curl_json \
+            "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?name=${CF_DOMAIN}&type=A" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+          ) || {
+            log "错误: 查询 Cloudflare 记录失败"
+            exit 1
+          }
 
-            # 3. 查 CF 当前 A 记录
-            RECORD_INFO=$(curl_json \
-              "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?name=${CF_DOMAIN}&type=A" \
-              -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            ) || {
-              log "警告: 查询 Cloudflare 记录失败，跳过本轮"
-              [ "$i" -lt 5 ] && sleep 60
-              continue
-            }
+          RECORD_ID=$(echo "$RECORD_INFO" | jq -r '.result[0].id // empty')
+          OLD_IP=$(echo "$RECORD_INFO" | jq -r '.result[0].content // empty')
 
-            RECORD_ID=$(echo "$RECORD_INFO" | jq -r '.result[0].id // empty')
-            OLD_IP=$(echo "$RECORD_INFO" | jq -r '.result[0].content // empty')
+          log "CF 当前 IP: ${OLD_IP:-<空>}"
 
-            log "CF 当前 IP: ${OLD_IP:-<空>}"
+          # 4. 对比并更新
+          if [ "$NEW_IP" = "$OLD_IP" ]; then
+            log "IP 未变化，跳过"
+            log "===== 单次检测结束 ====="
+            exit 0
+          fi
 
-            # 4. 对比并更新
-            if [ "$NEW_IP" = "$OLD_IP" ]; then
-              log "IP 未变化，跳过"
-            else
-              log "IP 变化: ${OLD_IP:-<空>} → $NEW_IP，更新中..."
+          log "IP 变化: ${OLD_IP:-<空>} → $NEW_IP，更新中..."
 
-              if [ -z "$RECORD_ID" ]; then
-                METHOD="POST"
-                URL="https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records"
-              else
-                METHOD="PUT"
-                URL="https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}"
-              fi
+          if [ -z "$RECORD_ID" ]; then
+            METHOD="POST"
+            URL="https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records"
+          else
+            METHOD="PUT"
+            URL="https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}"
+          fi
 
-              RESULT=$(curl_json \
-                "$URL" \
-                -X "$METHOD" \
-                -H "Authorization: Bearer ${CF_API_TOKEN}" \
-                -H "Content-Type: application/json" \
-                --data "{\"type\":\"A\",\"name\":\"${CF_DOMAIN}\",\"content\":\"${NEW_IP}\",\"ttl\":60,\"proxied\":false}" \
-              ) || {
-                log "警告: 写入 Cloudflare 失败，跳过本轮"
-                [ "$i" -lt 5 ] && sleep 60
-                continue
-              }
+          RESULT=$(curl_json \
+            "$URL" \
+            -X "$METHOD" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"type\":\"A\",\"name\":\"${CF_DOMAIN}\",\"content\":\"${NEW_IP}\",\"ttl\":60,\"proxied\":false}" \
+          ) || {
+            log "错误: 写入 Cloudflare 失败"
+            exit 1
+          }
 
-              SUCCESS=$(echo "$RESULT" | jq -r '.success // false')
+          SUCCESS=$(echo "$RESULT" | jq -r '.success // false')
 
-              if [ "$SUCCESS" = "true" ]; then
-                log "✓ DNS 更新成功: ${CF_DOMAIN} → ${NEW_IP}"
-              else
-                log "✗ 更新失败"
-                echo "$RESULT" | jq .
-              fi
-            fi
+          if [ "$SUCCESS" = "true" ]; then
+            log "✓ DNS 更新成功: ${CF_DOMAIN} → ${NEW_IP}"
+          else
+            log "✗ 更新失败"
+            echo "$RESULT" | jq .
+            exit 1
+          fi
 
-            [ "$i" -lt 5 ] && sleep 60
-          done
-
-          log "===== 本轮 5 次检测完毕 ====="
+          log "===== 单次检测结束 ====="
