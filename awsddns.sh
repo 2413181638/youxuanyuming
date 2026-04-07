@@ -16,6 +16,7 @@ SCRIPT_PATH="$SCRIPT_DIR/$(basename "$0")"
 LOG_FILE="${LOG_FILE:-$HOME/.ddns/ddns.log}"
 PID_FILE="/tmp/ddns-vps-daemon-$(id -u).pid"
 LOCK_FILE="/tmp/ddns-vps-daemon-$(id -u).lock"
+NEXT_CHECK_FILE="/tmp/ddns-vps-daemon-$(id -u).next"
 
 # ========== 工具函数 ==========
 
@@ -243,6 +244,12 @@ run_daemon() {
       log_msg "本次检测出现错误，继续下一次..."
     fi
     
+    # 记录下次检测时间（用于倒计时显示）
+    local next_check
+    next_check=$(date +%s)
+    next_check=$((next_check + 60))
+    echo "$next_check" > "$NEXT_CHECK_FILE"
+    
     log_msg "----- 检测完成，60秒后再次检测 -----"
     log_msg ""
     
@@ -349,7 +356,7 @@ stop_service() {
   fi
   
   # 清理文件
-  rm -f "$PID_FILE" "$LOCK_FILE" "$LOCK_FILE.start"
+  rm -f "$PID_FILE" "$LOCK_FILE" "$LOCK_FILE.start" "$NEXT_CHECK_FILE"
   
   echo "DDNS 服务已停止"
 }
@@ -364,6 +371,92 @@ show_logs() {
   tail -n 50 "$LOG_FILE"
   echo "=========================================="
   echo "提示: 按 Ctrl+C 退出日志查看"
+}
+
+# 获取下次检测倒计时（秒）
+get_countdown() {
+  if [ ! -f "$NEXT_CHECK_FILE" ]; then
+    echo "--"
+    return
+  fi
+  
+  local next_check now remaining
+  next_check="$(cat "$NEXT_CHECK_FILE" 2>/dev/null || echo "0")"
+  now=$(date +%s)
+  remaining=$((next_check - now))
+  
+  if [ "$remaining" -le 0 ]; then
+    echo "检测中..."
+  elif [ "$remaining" -lt 60 ]; then
+    echo "${remaining}秒"
+  else
+    echo "$((remaining / 60))分$((remaining % 60))秒"
+  fi
+}
+
+# 实时监控日志（带倒计时）
+watch_logs() {
+  if [ ! -f "$LOG_FILE" ]; then
+    echo "日志文件不存在: $LOG_FILE"
+    return 1
+  fi
+  
+  # 检测终端能力，如果不支持 ANSI 转义码则降级到简单模式
+  if [ -z "$TERM" ] || [ "$TERM" = "dumb" ] || [ "$TERM" = "unknown" ]; then
+    echo "【简单模式】终端不支持高级显示，仅显示日志..."
+    echo "按 Ctrl+C 退出"
+    echo ""
+    tail -f "$LOG_FILE"
+    return
+  fi
+  
+  # 清屏
+  clear
+  
+  echo "╔════════════════════════════════════════════════════════╗"
+  echo "║           DDNS 实时监控面板                            ║"
+  echo "╠════════════════════════════════════════════════════════╣"
+  echo "║  按 Ctrl+C 退出实时监控                                ║"
+  echo "╚════════════════════════════════════════════════════════╝"
+  echo ""
+  
+  # 使用 tail -f 实时显示日志，同时在底部显示倒计时
+  # 创建一个子shell来处理倒计时显示
+  (
+    # 子shell中捕获终止信号
+    trap 'exit 0' TERM INT
+    while true; do
+      # 移动光标到第7行（日志区域下方）
+      printf '\033[7;1H'
+      printf '\033[K'  # 清除当前行
+      printf "\r【倒计时】距离下次检测: %s  (按 Ctrl+C 退出)" "$(get_countdown)"
+      sleep 1
+    done
+  ) &
+  local countdown_pid=$!
+  
+  # 显示日志
+  tail -n 20 -f "$LOG_FILE" &
+  local tail_pid=$!
+  
+  # 捕获退出信号，确保子进程被清理
+  cleanup_watch() {
+    kill $tail_pid 2>/dev/null
+    kill $countdown_pid 2>/dev/null
+    wait $tail_pid 2>/dev/null
+    wait $countdown_pid 2>/dev/null
+    echo ""
+    echo "已退出实时监控"
+    exit 0
+  }
+  trap cleanup_watch INT TERM EXIT
+  
+  # 等待用户按 Ctrl+C
+  wait $tail_pid 2>/dev/null
+  
+  # 清理
+  trap - INT TERM EXIT
+  cleanup_watch
 }
 
 show_status() {
@@ -385,7 +478,8 @@ show_menu() {
   echo "╠════════════════════════════════════════╣"
   echo "║  1. 启动服务                           ║"
   echo "║  2. 停止服务                           ║"
-  echo "║  3. 查看日志                           ║"
+  echo "║  3. 查看日志（静态）                   ║"
+  echo "║  4. 实时监控（动态+倒计时）            ║"
   echo "║  0. 退出面板 (后台服务继续运行)        ║"
   echo "╚════════════════════════════════════════╝"
   echo ""
@@ -394,7 +488,7 @@ show_menu() {
 run_menu() {
   while true; do
     show_menu
-    read -p "请选择操作 [0-3]: " choice
+    read -p "请选择操作 [0-4]: " choice
     
     case "$choice" in
       1)
@@ -412,6 +506,12 @@ run_menu() {
       3)
         echo ""
         show_logs
+        echo ""
+        read -p "按回车键继续..."
+        ;;
+      4)
+        echo ""
+        watch_logs
         echo ""
         read -p "按回车键继续..."
         ;;
@@ -470,6 +570,10 @@ case "${1:-}" in
   log|logs)
     # 查看日志
     show_logs
+    ;;
+  watch)
+    # 实时监控
+    watch_logs
     ;;
   *)
     # 默认打开管理面板
