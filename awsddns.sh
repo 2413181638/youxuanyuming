@@ -5,7 +5,7 @@ set -o pipefail
 
 # ========== 用户配置区 ==========
 CF_API_TOKEN="cfut_3ZR4ZFfakq5MJxApE6ZLokxFWGdvoGQY8XAMrkZAa5f2f2f8"
-CF_DOMAIN="awshkniubi.77yun77.com"
+CF_DOMAIN="ahkniubi.77yun77.com"
 CF_ZONE_NAME="77yun77.com"
 AWS_SB_SGT="4d48e86004924a0b9ce4a6c99816cee7"
 # ================================
