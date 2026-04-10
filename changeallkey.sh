@@ -14,8 +14,8 @@ export OLD_TOKEN='xqtx.825332.xyz'
 export NEW_TOKEN='xqtx.okjnd.com'
 
 # 同时修改 IP 协议
-OLD_URL='https://xqtx.825332.xyz'
-NEW_URL='https://xqtx.okjnd.com'
+OLD_URL='http://8.137.161.100:50000'
+NEW_URL='https://yykg.723773.xyz'
 
 echo "🚀 开始执行强力替换..."
 
