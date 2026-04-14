@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# 腾讯云 DNSPod + Cloudflare DDNS 脚本（直接获取本机 IPv4）
+# 腾讯云 DNSPod + Cloudflare DDNS 脚本（直接获取公网 IPv4）
 # 默认运行即启动后台服务，避免重复进程。
 #
 # 用法：
@@ -39,10 +39,11 @@ CF_ACCOUNT_EMAIL="h89600912@gmail.com"
 CF_DOMAIN="77yun77.com"
 CF_SUB_DOMAIN="hkcesshi"
 CF_FULL_DOMAIN="${CF_SUB_DOMAIN}.${CF_DOMAIN}"
+CF_ZONE_ID=""
 CF_RECORD_TYPE="A"
 CF_TTL=1
 CF_PROXIED=false
-CF_COMMENT="local-ip-ddns"
+CF_COMMENT="public-ip-ddns"
 
 CHECK_INTERVAL=60
 DEBUG="false"
@@ -60,22 +61,59 @@ CONTENT_TYPE="application/json; charset=utf-8"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_NAME}"
-LOG_DIR="${LOG_DIR:-$HOME/.txcfddns}"
-LOG_FILE="${LOG_FILE:-$LOG_DIR/txcfddns.log}"
+LOG_DIR_CANDIDATE="${LOG_DIR:-${HOME:-/tmp}/.txcfddns}"
+LOG_FILE_CANDIDATE="${LOG_FILE:-}"
+LOG_DIR=""
+LOG_FILE=""
+LOG_PATHS_READY=0
 PID_FILE="/tmp/txcfddns-daemon-$(id -u).pid"
 LOCK_FILE="/tmp/txcfddns-daemon-$(id -u).lock"
 DAEMON_MARK="txcfddns-daemon-marker"
-STARTED_AT_FILE="${LOG_DIR}/txcfddns.started_at"
+STARTED_AT_FILE=""
+IP_SOURCE=""
+
+init_log_paths() {
+  [ "${LOG_PATHS_READY:-0}" = "1" ] && return 0
+
+  local candidates=() dir test_file
+  if [ -n "${LOG_FILE_CANDIDATE}" ]; then
+    candidates+=("$(dirname "$LOG_FILE_CANDIDATE")")
+  fi
+  [ -n "${LOG_DIR_CANDIDATE}" ] && candidates+=("${LOG_DIR_CANDIDATE}")
+  candidates+=("/tmp/txcfddns-$(id -u)")
+
+  for dir in "${candidates[@]}"; do
+    [ -n "$dir" ] || continue
+    mkdir -p "$dir" 2>/dev/null || continue
+    test_file="${dir}/.write_test.$$"
+    if : > "$test_file" 2>/dev/null; then
+      rm -f "$test_file"
+      LOG_DIR="$dir"
+      if [ -n "${LOG_FILE_CANDIDATE}" ] && [ "$(dirname "$LOG_FILE_CANDIDATE")" = "$dir" ]; then
+        LOG_FILE="${LOG_FILE_CANDIDATE}"
+      else
+        LOG_FILE="${LOG_DIR}/txcfddns.log"
+      fi
+      STARTED_AT_FILE="${LOG_DIR}/txcfddns.started_at"
+      LOG_PATHS_READY=1
+      return 0
+    fi
+  done
+
+  return 1
+}
 
 ensure_log_dir() {
-  mkdir -p "$LOG_DIR"
+  init_log_paths || return 1
+  mkdir -p "$LOG_DIR" 2>/dev/null || return 1
 }
 
 log() {
-  ensure_log_dir
   local msg="[$(date '+%F %T')] $*"
   echo "$msg" >&2
-  echo "$msg" >> "$LOG_FILE"
+  if ensure_log_dir; then
+    echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
+  fi
 }
 
 debug() {
@@ -266,14 +304,16 @@ tc_api() {
 
 cf_api() {
   local method="$1" endpoint="$2" data="${3:-}"
-  local response curl_args=()
+  local response http_code body curl_args=()
 
   curl_args=(
-    -fsS --connect-timeout 10 --max-time 30
+    -sS --connect-timeout 10 --max-time 30
     -X "$method"
     "https://api.cloudflare.com/client/v4${endpoint}"
     -H "Authorization: Bearer ${CF_API_TOKEN}"
     -H "Content-Type: application/json"
+    -H "Accept: application/json"
+    -w $'\n__HTTP_STATUS__:%{http_code}'
   )
 
   if [ -n "$data" ]; then
@@ -285,70 +325,96 @@ cf_api() {
     return 1
   }
 
-  debug "CF Response(${method} ${endpoint})=$response"
+  http_code="${response##*$'\n'__HTTP_STATUS__:}"
+  body="${response%$'\n'__HTTP_STATUS__:*}"
 
-  if ! printf '%s' "$response" | jq -e '.' >/dev/null 2>&1; then
-    log "❌ Cloudflare API 返回不是合法 JSON：${method} ${endpoint}"
+  debug "CF HTTP(${method} ${endpoint})=${http_code}"
+  debug "CF Response(${method} ${endpoint})=$body"
+
+  if ! printf '%s' "$body" | jq -e '.' >/dev/null 2>&1; then
+    log "❌ Cloudflare API 返回不是合法 JSON：${method} ${endpoint} | HTTP ${http_code}"
     return 1
   fi
 
-  if ! printf '%s' "$response" | jq -e '.success == true' >/dev/null 2>&1; then
-    log "❌ Cloudflare API 报错：${method} ${endpoint}"
-    log "   Errors: $(printf '%s' "$response" | jq -c '.errors // []')"
-    log "   Messages: $(printf '%s' "$response" | jq -c '.messages // []')"
+  if [ -z "$http_code" ] || [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ] || \
+     ! printf '%s' "$body" | jq -e '.success == true' >/dev/null 2>&1; then
+    log "❌ Cloudflare API 报错：${method} ${endpoint} | HTTP ${http_code}"
+    log "   Errors: $(printf '%s' "$body" | jq -c '.errors // []')"
+    log "   Messages: $(printf '%s' "$body" | jq -c '.messages // []')"
     return 1
   fi
 
-  printf '%s' "$response"
+  printf '%s' "$body"
+}
+
+get_aws_metadata_public_ipv4() {
+  local token="" ip=""
+
+  token="$(curl -fsS --connect-timeout 2 --max-time 3 -X PUT \
+    "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null || true)"
+
+  if [ -n "$token" ]; then
+    ip="$(curl -fsS --connect-timeout 2 --max-time 3 \
+      -H "X-aws-ec2-metadata-token: ${token}" \
+      "http://169.254.169.254/latest/meta-data/public-ipv4" 2>/dev/null || true)"
+  else
+    ip="$(curl -fsS --connect-timeout 2 --max-time 3 \
+      "http://169.254.169.254/latest/meta-data/public-ipv4" 2>/dev/null || true)"
+  fi
+
+  if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
+    printf '%s' "$ip"
+    return 0
+  fi
+  return 1
+}
+
+get_ip_from_ipip() {
+  local raw ip
+  raw="$(curl -fsS --connect-timeout 5 --max-time 10 "https://myip.ipip.net" 2>/dev/null || true)"
+  ip="$(printf '%s' "$raw" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1)"
+
+  if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
+    printf '%s' "$ip"
+    return 0
+  fi
+  return 1
+}
+
+get_ip_from_ipify() {
+  local ip
+  ip="$(curl -fsS --connect-timeout 5 --max-time 10 "https://api.ipify.org" 2>/dev/null || true)"
+  if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
+    printf '%s' "$ip"
+    return 0
+  fi
+  return 1
 }
 
 get_local_ipv4() {
   local ip=""
+  IP_SOURCE=""
 
-  if command -v ip >/dev/null 2>&1; then
-    ip="$(ip route get 1.1.1.1 2>/dev/null | awk '{
-      for (i = 1; i <= NF; i++) {
-        if ($i == "src") {
-          print $(i + 1)
-          exit
-        }
-      }
-    }')"
-    if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
-      printf '%s' "$ip"
-      return 0
-    fi
-
-    ip="$(ip -4 -o addr show up scope global 2>/dev/null | awk '{
-      split($4, a, "/")
-      if (a[1] !~ /^127\./) {
-        print a[1]
-        exit
-      }
-    }')"
-    if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
-      printf '%s' "$ip"
-      return 0
-    fi
+  if ip="$(get_aws_metadata_public_ipv4)"; then
+    IP_SOURCE="AWS Metadata public-ipv4"
+    printf '%s' "$ip"
+    return 0
   fi
 
-  if command -v hostname >/dev/null 2>&1; then
-    ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | awk '/^[0-9]+(\.[0-9]+){3}$/ && $1 !~ /^127\./ {print; exit}')"
-    if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
-      printf '%s' "$ip"
-      return 0
-    fi
+  if ip="$(get_ip_from_ipip)"; then
+    IP_SOURCE="ipip.net"
+    printf '%s' "$ip"
+    return 0
   fi
 
-  if command -v ifconfig >/dev/null 2>&1; then
-    ip="$(ifconfig 2>/dev/null | awk '/inet / && $2 != "127.0.0.1" {print $2; exit}')"
-    if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
-      printf '%s' "$ip"
-      return 0
-    fi
+  if ip="$(get_ip_from_ipify)"; then
+    IP_SOURCE="api.ipify.org"
+    printf '%s' "$ip"
+    return 0
   fi
 
-  log "❌ 无法获取有效的本机 IPv4"
+  log "❌ 无法获取有效公网 IPv4（已尝试 AWS Metadata、ipip.net、ipify）"
   return 1
 }
 
@@ -446,7 +512,16 @@ sync_tencent_dns() {
 
 cf_get_zone_id() {
   local response zone_id
-  response="$(cf_api "GET" "/zones?name=${CF_DOMAIN}&status=active&per_page=1")" || return 1
+
+  if [ -n "${CF_ZONE_ID:-}" ]; then
+    printf '%s' "${CF_ZONE_ID}"
+    return 0
+  fi
+
+  response="$(cf_api "GET" "/zones?name=${CF_DOMAIN}&status=active&per_page=1")" || {
+    log "ℹ️ 如 Token 缺少 Zone:Read 权限，可直接在脚本里填写 CF_ZONE_ID 后跳过 Zone 查询"
+    return 1
+  }
   zone_id="$(printf '%s' "$response" | jq -r '.result[0].id // empty')"
 
   [ -n "$zone_id" ] || {
@@ -543,12 +618,12 @@ do_ddns_once() {
   log "=========================================="
   log "开始执行 DDNS 同步"
   log "腾讯云目标: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
-  log "Cloudflare 目标: ${CF_FULL_DOMAIN} | TTL: ${CF_TTL} | 代理: ${CF_PROXIED}"
+  log "Cloudflare 目标: ${CF_FULL_DOMAIN} | TTL: ${CF_TTL} | 代理: ${CF_PROXIED} | ZoneID: ${CF_ZONE_ID:-auto}"
 
   validate_config || return 1
 
   current_ip="$(get_local_ipv4)" || return 1
-  log "当前本机 IPv4: ${current_ip}"
+  log "当前公网 IPv4: ${current_ip} | 来源: ${IP_SOURCE:-unknown}"
 
   sync_tencent_dns "$current_ip" || return 1
   sync_cloudflare_dns "$current_ip" || return 1
@@ -752,7 +827,7 @@ run_daemon() {
   log "备注: ${RECORD_REMARK}"
   log "检测间隔: ${CHECK_INTERVAL}s"
   log "日志文件: ${LOG_FILE}"
-  log "获取 IP 方式: 本机 IPv4（优先默认路由 src）"
+  log "获取 IP 方式: 公网 IPv4（优先 AWS Metadata，其次 ipip.net / ipify）"
   log "PID: $$"
   log "=========================================="
 
