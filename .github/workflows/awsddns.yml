@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# 腾讯云 DNSPod + Cloudflare DDNS 脚本（直接获取公网 IPv4）
+# 腾讯云 DNSPod 双记录 DDNS 脚本（直接获取公网 IPv4）
 # 默认运行即启动后台服务，避免重复进程。
 #
 # 用法：
@@ -33,30 +33,18 @@ RECORD_TYPE="A"
 RECORD_LINE="移动"
 RECORD_REMARK="awshk"
 
-# Cloudflare
-
-cfa="cfut_EV4enb9G"
-cfb="8wzdgWGJLX4x7EXmZ8ckMhFZKZeVvLJU0cc3f174"
-
-CF_API_TOKEN=a+b
-CF_ACCOUNT_EMAIL="h89600912@gmail.com"
-CF_DOMAIN="77yun77.com"
-CF_SUB_DOMAIN="hkcesshi"
-CF_FULL_DOMAIN="${CF_SUB_DOMAIN}.${CF_DOMAIN}"
-CF_ZONE_ID="f18ec2e3aada6bea81761d248f2ed0ea"
-CF_RECORD_TYPE="A"
-CF_TTL=1
-CF_PROXIED=false
-CF_COMMENT="public-ip-ddns"
+SUB_DOMAIN_2="ahkwsddns"
+FULL_DOMAIN_2="${SUB_DOMAIN_2}.${DOMAIN}"
+RECORD_REMARK_2="awshkddns"
 
 CHECK_INTERVAL=60
 DEBUG="false"
 # ================================
 
 [ "${SUB_DOMAIN}" = "@" ] || [ -n "${SUB_DOMAIN}" ] || FULL_DOMAIN="${DOMAIN}"
-[ "${CF_SUB_DOMAIN}" = "@" ] || [ -n "${CF_SUB_DOMAIN}" ] || CF_FULL_DOMAIN="${CF_DOMAIN}"
 if [ "${SUB_DOMAIN}" = "@" ]; then FULL_DOMAIN="${DOMAIN}"; fi
-if [ "${CF_SUB_DOMAIN}" = "@" ]; then CF_FULL_DOMAIN="${CF_DOMAIN}"; fi
+[ "${SUB_DOMAIN_2}" = "@" ] || [ -n "${SUB_DOMAIN_2}" ] || FULL_DOMAIN_2="${DOMAIN}"
+if [ "${SUB_DOMAIN_2}" = "@" ]; then FULL_DOMAIN_2="${DOMAIN}"; fi
 
 SERVICE="dnspod"
 HOST="dnspod.tencentcloudapi.com"
@@ -309,50 +297,6 @@ tc_api() {
   printf '%s' "$response"
 }
 
-cf_api() {
-  local method="$1" endpoint="$2" data="${3:-}"
-  local response http_code body curl_args=()
-
-  curl_args=(
-    -sS --connect-timeout 10 --max-time 30
-    -X "$method"
-    "https://api.cloudflare.com/client/v4${endpoint}"
-    -H "Authorization: Bearer ${CF_API_TOKEN}"
-    -H "Content-Type: application/json"
-    -H "Accept: application/json"
-    -w $'\n__HTTP_STATUS__:%{http_code}'
-  )
-
-  if [ -n "$data" ]; then
-    curl_args+=(-d "$data")
-  fi
-
-  response="$(curl "${curl_args[@]}")" || {
-    log "❌ 调用 Cloudflare API 失败：${method} ${endpoint}"
-    return 1
-  }
-
-  http_code="${response##*$'\n'__HTTP_STATUS__:}"
-  body="${response%$'\n'__HTTP_STATUS__:*}"
-
-  debug "CF HTTP(${method} ${endpoint})=${http_code}"
-  debug "CF Response(${method} ${endpoint})=$body"
-
-  if ! printf '%s' "$body" | jq -e '.' >/dev/null 2>&1; then
-    log "❌ Cloudflare API 返回不是合法 JSON：${method} ${endpoint} | HTTP ${http_code}"
-    return 1
-  fi
-
-  if [ -z "$http_code" ] || [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ] || \
-     ! printf '%s' "$body" | jq -e '.success == true' >/dev/null 2>&1; then
-    log "❌ Cloudflare API 报错：${method} ${endpoint} | HTTP ${http_code}"
-    log "   Errors: $(printf '%s' "$body" | jq -c '.errors // []')"
-    log "   Messages: $(printf '%s' "$body" | jq -c '.messages // []')"
-    return 1
-  fi
-
-  printf '%s' "$body"
-}
 
 get_aws_metadata_public_ipv4() {
   local token="" ip=""
@@ -426,188 +370,109 @@ get_local_ipv4() {
 }
 
 get_target_record() {
+  local sub_domain="$1" wanted_remark="$2"
   local payload response
   payload="$(jq -cn \
     --arg domain "$DOMAIN" \
-    --arg sub "$SUB_DOMAIN" \
+    --arg sub "$sub_domain" \
     --arg type "$RECORD_TYPE" \
     --arg line "$RECORD_LINE" \
     '{Domain:$domain,Subdomain:$sub,RecordType:$type,RecordLine:$line,Limit:3000,Offset:0,ErrorOnEmpty:"no"}')"
 
   response="$(tc_api "DescribeRecordList" "$payload")" || return 1
 
-  printf '%s' "$response" | jq -c --arg remark "$RECORD_REMARK" '
+  printf '%s' "$response" | jq -c --arg remark "$wanted_remark" '
     (.Response.RecordList // []) as $list |
     ($list | map(select(.Remark == $remark))[0]) // ($list[0]) // empty
   '
 }
 
 create_record() {
-  local ip="$1" payload response record_id
+  local sub_domain="$1" full_domain="$2" wanted_remark="$3" ip="$4" payload response record_id
   payload="$(jq -cn \
     --arg domain "$DOMAIN" \
-    --arg sub "$SUB_DOMAIN" \
+    --arg sub "$sub_domain" \
     --arg type "$RECORD_TYPE" \
     --arg line "$RECORD_LINE" \
     --arg value "$ip" \
-    --arg remark "$RECORD_REMARK" \
+    --arg remark "$wanted_remark" \
     '{Domain:$domain,SubDomain:$sub,RecordType:$type,RecordLine:$line,Value:$value,Remark:$remark,Status:"ENABLE"}')"
 
   response="$(tc_api "CreateRecord" "$payload")" || return 1
   record_id="$(printf '%s' "$response" | jq -r '.Response.RecordId')"
-  log "✅ 腾讯云已创建记录：${FULL_DOMAIN} [${RECORD_LINE}] -> ${ip} (RecordId=${record_id})"
+  log "✅ 腾讯云已创建记录：${full_domain} [${RECORD_LINE}] -> ${ip} (RecordId=${record_id})"
 }
 
 modify_dynamic_dns() {
-  local record_id="$1" ip="$2" payload
+  local sub_domain="$1" full_domain="$2" record_id="$3" ip="$4" payload
   payload="$(jq -cn \
     --arg domain "$DOMAIN" \
-    --arg sub "$SUB_DOMAIN" \
+    --arg sub "$sub_domain" \
     --arg line "$RECORD_LINE" \
     --arg value "$ip" \
     --argjson record_id "$record_id" \
     '{Domain:$domain,SubDomain:$sub,RecordId:$record_id,RecordLine:$line,Value:$value}')"
 
   tc_api "ModifyDynamicDNS" "$payload" >/dev/null || return 1
-  log "✅ 腾讯云 DDNS 更新成功：${FULL_DOMAIN} [${RECORD_LINE}] -> ${ip} (RecordId=${record_id})"
+  log "✅ 腾讯云 DDNS 更新成功：${full_domain} [${RECORD_LINE}] -> ${ip} (RecordId=${record_id})"
 }
 
 modify_record_remark() {
-  local record_id="$1" payload
+  local record_id="$1" wanted_remark="$2" payload
   payload="$(jq -cn \
     --arg domain "$DOMAIN" \
-    --arg remark "$RECORD_REMARK" \
+    --arg remark "$wanted_remark" \
     --argjson record_id "$record_id" \
     '{Domain:$domain,RecordId:$record_id,Remark:$remark}')"
 
   tc_api "ModifyRecordRemark" "$payload" >/dev/null || return 1
-  log "✅ 腾讯云已同步记录备注：${RECORD_REMARK} (RecordId=${record_id})"
+  log "✅ 腾讯云已同步记录备注：${wanted_remark} (RecordId=${record_id})"
 }
 
-sync_tencent_dns() {
-  local current_ip="$1"
-  local record_json record_id record_value record_remark
+sync_tencent_dns_record() {
+  local sub_domain="$1" full_domain="$2" wanted_remark="$3" current_ip="$4"
+  local record_json record_id record_value current_remark
 
-  record_json="$(get_target_record)" || return 1
+  record_json="$(get_target_record "$sub_domain" "$wanted_remark")" || return 1
 
   if [ -z "$record_json" ] || [ "$record_json" = "null" ]; then
-    log "ℹ️ 腾讯云未找到 ${FULL_DOMAIN} [${RECORD_LINE}] 的 A 记录，准备创建"
-    create_record "$current_ip" || return 1
+    log "ℹ️ 腾讯云未找到 ${full_domain} [${RECORD_LINE}] 的 A 记录，准备创建"
+    create_record "$sub_domain" "$full_domain" "$wanted_remark" "$current_ip" || return 1
     return 0
   fi
 
   record_id="$(printf '%s' "$record_json" | jq -r '.RecordId // empty')"
   record_value="$(printf '%s' "$record_json" | jq -r '.Value // ""')"
-  record_remark="$(printf '%s' "$record_json" | jq -r '.Remark // ""')"
+  current_remark="$(printf '%s' "$record_json" | jq -r '.Remark // ""')"
 
   [ -n "$record_id" ] || {
-    log "❌ 腾讯云现有记录缺少 RecordId"
+    log "❌ 腾讯云现有记录缺少 RecordId：${full_domain}"
     return 1
   }
 
   if [ "$record_value" != "$current_ip" ]; then
-    log "ℹ️ 腾讯云检测到 IP 变化：${record_value:-<空>} -> ${current_ip}"
-    modify_dynamic_dns "$record_id" "$current_ip" || return 1
+    log "ℹ️ 腾讯云检测到 IP 变化：${full_domain} | ${record_value:-<空>} -> ${current_ip}"
+    modify_dynamic_dns "$sub_domain" "$full_domain" "$record_id" "$current_ip" || return 1
   else
-    log "ℹ️ 腾讯云 IP 未变化：${current_ip}，无需更新"
+    log "ℹ️ 腾讯云 IP 未变化：${full_domain} -> ${current_ip}，无需更新"
   fi
 
-  if [ "$record_remark" != "$RECORD_REMARK" ]; then
-    modify_record_remark "$record_id" || return 1
+  if [ "$current_remark" != "$wanted_remark" ]; then
+    modify_record_remark "$record_id" "$wanted_remark" || return 1
   fi
 }
 
-cf_get_zone_id() {
-  local response zone_id
-
-  if [ -n "${CF_ZONE_ID:-}" ]; then
-    printf '%s' "${CF_ZONE_ID}"
-    return 0
-  fi
-
-  response="$(cf_api "GET" "/zones?name=${CF_DOMAIN}&status=active&per_page=1")" || {
-    log "ℹ️ 如 Token 缺少 Zone:Read 权限，可直接在脚本里填写 CF_ZONE_ID 后跳过 Zone 查询"
-    return 1
-  }
-  zone_id="$(printf '%s' "$response" | jq -r '.result[0].id // empty')"
-
-  [ -n "$zone_id" ] || {
-    log "❌ Cloudflare 未找到 Zone：${CF_DOMAIN}"
-    return 1
-  }
-
-  printf '%s' "$zone_id"
-}
-
-cf_get_record() {
-  local zone_id="$1" response
-  response="$(cf_api "GET" "/zones/${zone_id}/dns_records?type=${CF_RECORD_TYPE}&name=${CF_FULL_DOMAIN}&per_page=100")" || return 1
-  printf '%s' "$response" | jq -c '.result[0] // empty'
-}
-
-cf_create_record() {
-  local zone_id="$1" ip="$2" payload response record_id
-  payload="$(jq -cn \
-    --arg type "$CF_RECORD_TYPE" \
-    --arg name "$CF_FULL_DOMAIN" \
-    --arg content "$ip" \
-    --arg comment "$CF_COMMENT" \
-    --argjson ttl "$CF_TTL" \
-    --argjson proxied "$CF_PROXIED" \
-    '{type:$type,name:$name,content:$content,ttl:$ttl,proxied:$proxied,comment:$comment}')"
-
-  response="$(cf_api "POST" "/zones/${zone_id}/dns_records" "$payload")" || return 1
-  record_id="$(printf '%s' "$response" | jq -r '.result.id // empty')"
-  log "✅ Cloudflare 已创建记录：${CF_FULL_DOMAIN} -> ${ip} (RecordId=${record_id})"
-}
-
-cf_update_record() {
-  local zone_id="$1" record_id="$2" ip="$3" payload
-  payload="$(jq -cn \
-    --arg type "$CF_RECORD_TYPE" \
-    --arg name "$CF_FULL_DOMAIN" \
-    --arg content "$ip" \
-    --arg comment "$CF_COMMENT" \
-    --argjson ttl "$CF_TTL" \
-    --argjson proxied "$CF_PROXIED" \
-    '{type:$type,name:$name,content:$content,ttl:$ttl,proxied:$proxied,comment:$comment}')"
-
-  cf_api "PUT" "/zones/${zone_id}/dns_records/${record_id}" "$payload" >/dev/null || return 1
-  log "✅ Cloudflare 更新成功：${CF_FULL_DOMAIN} -> ${ip} (RecordId=${record_id})"
-}
-
-sync_cloudflare_dns() {
+sync_tencent_dns() {
   local current_ip="$1"
-  local zone_id record_json record_id record_value
 
-  zone_id="$(cf_get_zone_id)" || return 1
-  record_json="$(cf_get_record "$zone_id")" || return 1
-
-  if [ -z "$record_json" ] || [ "$record_json" = "null" ]; then
-    log "ℹ️ Cloudflare 未找到 ${CF_FULL_DOMAIN} 的 A 记录，准备创建"
-    cf_create_record "$zone_id" "$current_ip" || return 1
-    return 0
-  fi
-
-  record_id="$(printf '%s' "$record_json" | jq -r '.id // empty')"
-  record_value="$(printf '%s' "$record_json" | jq -r '.content // ""')"
-
-  [ -n "$record_id" ] || {
-    log "❌ Cloudflare 现有记录缺少 id"
-    return 1
-  }
-
-  if [ "$record_value" != "$current_ip" ]; then
-    log "ℹ️ Cloudflare 检测到 IP 变化：${record_value:-<空>} -> ${current_ip}"
-    cf_update_record "$zone_id" "$record_id" "$current_ip" || return 1
-  else
-    log "ℹ️ Cloudflare IP 未变化：${current_ip}，无需更新"
-  fi
+  sync_tencent_dns_record "$SUB_DOMAIN" "$FULL_DOMAIN" "$RECORD_REMARK" "$current_ip" || return 1
+  sync_tencent_dns_record "$SUB_DOMAIN_2" "$FULL_DOMAIN_2" "$RECORD_REMARK_2" "$current_ip" || return 1
 }
 
 validate_config() {
+
   local missing=() v
-  for v in SECRET_ID SECRET_KEY DOMAIN SUB_DOMAIN RECORD_TYPE RECORD_LINE CF_API_TOKEN CF_DOMAIN CF_SUB_DOMAIN CF_RECORD_TYPE; do
+  for v in SECRET_ID SECRET_KEY DOMAIN SUB_DOMAIN RECORD_TYPE RECORD_LINE RECORD_REMARK SUB_DOMAIN_2 RECORD_REMARK_2; do
     if [ -z "${!v:-}" ]; then
       missing+=("$v")
     fi
@@ -624,8 +489,8 @@ do_ddns_once() {
 
   log "=========================================="
   log "开始执行 DDNS 同步"
-  log "腾讯云目标: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
-  log "Cloudflare 目标: ${CF_FULL_DOMAIN} | TTL: ${CF_TTL} | 代理: ${CF_PROXIED} | ZoneID: ${CF_ZONE_ID:-auto}"
+  log "腾讯云目标1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
+  log "腾讯云目标2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK_2}"
 
   validate_config || return 1
 
@@ -633,7 +498,6 @@ do_ddns_once() {
   log "当前公网 IPv4: ${current_ip} | 来源: ${IP_SOURCE:-unknown}"
 
   sync_tencent_dns "$current_ip" || return 1
-  sync_cloudflare_dns "$current_ip" || return 1
 
   log "DDNS 同步完成"
 }
@@ -745,10 +609,9 @@ show_status() {
   local pid started_at runtime memory existing_count
   existing_count="$(count_existing_pids)"
   echo "脚本: ${SCRIPT_PATH}"
-  echo "腾讯云域名: ${FULL_DOMAIN}"
-  echo "Cloudflare 域名: ${CF_FULL_DOMAIN}"
+  echo "腾讯云域名1: ${FULL_DOMAIN} | 备注: ${RECORD_REMARK}"
+  echo "腾讯云域名2: ${FULL_DOMAIN_2} | 备注: ${RECORD_REMARK_2}"
   echo "线路: ${RECORD_LINE}"
-  echo "备注: ${RECORD_REMARK}"
   echo "间隔: ${CHECK_INTERVAL}s"
   echo "日志: ${LOG_FILE}"
 
@@ -839,11 +702,10 @@ run_daemon() {
   trap 'daemon_cleanup' EXIT
 
   log "=========================================="
-  log "腾讯云 + Cloudflare DDNS 后台服务已启动"
-  log "腾讯云域名: ${FULL_DOMAIN}"
-  log "Cloudflare 域名: ${CF_FULL_DOMAIN}"
+  log "腾讯云双记录 DDNS 后台服务已启动"
+  log "腾讯云域名1: ${FULL_DOMAIN} | 备注: ${RECORD_REMARK}"
+  log "腾讯云域名2: ${FULL_DOMAIN_2} | 备注: ${RECORD_REMARK_2}"
   log "线路: ${RECORD_LINE}"
-  log "备注: ${RECORD_REMARK}"
   log "检测间隔: ${CHECK_INTERVAL}s"
   log "日志文件: ${LOG_FILE}"
   log "获取 IP 方式: 公网 IPv4（优先 AWS Metadata，其次 ipip.net / ipify）"
@@ -934,7 +796,7 @@ show_menu_screen() {
   fi
 
   echo "╔══════════════════════════════════════════════╗"
-  echo "║      腾讯云 + Cloudflare DDNS 管理面板      ║"
+  echo "║      腾讯云双记录 DDNS 管理面板      ║"
   echo "╠══════════════════════════════════════════════╣"
   show_status
   echo "╠══════════════════════════════════════════════╣"
