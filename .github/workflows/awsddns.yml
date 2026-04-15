@@ -34,7 +34,11 @@ RECORD_LINE="移动"
 RECORD_REMARK="awshk"
 
 # Cloudflare
-CF_API_TOKEN="cfut_d342fqXxmNlYD3fTXDPba4zdSAJrQTtER9QUvvek83a3d925"
+
+cfa="cfut_EV4enb9G"
+cfb="8wzdgWGJLX4x7EXmZ8ckMhFZKZeVvLJU0cc3f174"
+
+CF_API_TOKEN=a+b
 CF_ACCOUNT_EMAIL="h89600912@gmail.com"
 CF_DOMAIN="77yun77.com"
 CF_SUB_DOMAIN="hkcesshi"
