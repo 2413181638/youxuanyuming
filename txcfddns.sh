@@ -35,6 +35,7 @@ RECORD_REMARK="awshk"
 
 SUB_DOMAIN_2="ahkwsddns"
 FULL_DOMAIN_2="${SUB_DOMAIN_2}.${DOMAIN}"
+RECORD_LINE_2="默认"
 RECORD_REMARK_2="awshkddns"
 
 CHECK_INTERVAL=60
@@ -370,13 +371,13 @@ get_local_ipv4() {
 }
 
 get_target_record() {
-  local sub_domain="$1" wanted_remark="$2"
+  local sub_domain="$1" wanted_line="$2" wanted_remark="$3"
   local payload response
   payload="$(jq -cn \
     --arg domain "$DOMAIN" \
     --arg sub "$sub_domain" \
     --arg type "$RECORD_TYPE" \
-    --arg line "$RECORD_LINE" \
+    --arg line "$wanted_line" \
     '{Domain:$domain,Subdomain:$sub,RecordType:$type,RecordLine:$line,Limit:3000,Offset:0,ErrorOnEmpty:"no"}')"
 
   response="$(tc_api "DescribeRecordList" "$payload")" || return 1
@@ -388,33 +389,33 @@ get_target_record() {
 }
 
 create_record() {
-  local sub_domain="$1" full_domain="$2" wanted_remark="$3" ip="$4" payload response record_id
+  local sub_domain="$1" full_domain="$2" wanted_line="$3" wanted_remark="$4" ip="$5" payload response record_id
   payload="$(jq -cn \
     --arg domain "$DOMAIN" \
     --arg sub "$sub_domain" \
     --arg type "$RECORD_TYPE" \
-    --arg line "$RECORD_LINE" \
+    --arg line "$wanted_line" \
     --arg value "$ip" \
     --arg remark "$wanted_remark" \
     '{Domain:$domain,SubDomain:$sub,RecordType:$type,RecordLine:$line,Value:$value,Remark:$remark,Status:"ENABLE"}')"
 
   response="$(tc_api "CreateRecord" "$payload")" || return 1
   record_id="$(printf '%s' "$response" | jq -r '.Response.RecordId')"
-  log "✅ 腾讯云已创建记录：${full_domain} [${RECORD_LINE}] -> ${ip} (RecordId=${record_id})"
+  log "✅ 腾讯云已创建记录：${full_domain} [${wanted_line}] -> ${ip} (RecordId=${record_id})"
 }
 
 modify_dynamic_dns() {
-  local sub_domain="$1" full_domain="$2" record_id="$3" ip="$4" payload
+  local sub_domain="$1" full_domain="$2" wanted_line="$3" record_id="$4" ip="$5" payload
   payload="$(jq -cn \
     --arg domain "$DOMAIN" \
     --arg sub "$sub_domain" \
-    --arg line "$RECORD_LINE" \
+    --arg line "$wanted_line" \
     --arg value "$ip" \
     --argjson record_id "$record_id" \
     '{Domain:$domain,SubDomain:$sub,RecordId:$record_id,RecordLine:$line,Value:$value}')"
 
   tc_api "ModifyDynamicDNS" "$payload" >/dev/null || return 1
-  log "✅ 腾讯云 DDNS 更新成功：${full_domain} [${RECORD_LINE}] -> ${ip} (RecordId=${record_id})"
+  log "✅ 腾讯云 DDNS 更新成功：${full_domain} [${wanted_line}] -> ${ip} (RecordId=${record_id})"
 }
 
 modify_record_remark() {
@@ -430,14 +431,14 @@ modify_record_remark() {
 }
 
 sync_tencent_dns_record() {
-  local sub_domain="$1" full_domain="$2" wanted_remark="$3" current_ip="$4"
+  local sub_domain="$1" full_domain="$2" wanted_line="$3" wanted_remark="$4" current_ip="$5"
   local record_json record_id record_value current_remark
 
-  record_json="$(get_target_record "$sub_domain" "$wanted_remark")" || return 1
+  record_json="$(get_target_record "$sub_domain" "$wanted_line" "$wanted_remark")" || return 1
 
   if [ -z "$record_json" ] || [ "$record_json" = "null" ]; then
-    log "ℹ️ 腾讯云未找到 ${full_domain} [${RECORD_LINE}] 的 A 记录，准备创建"
-    create_record "$sub_domain" "$full_domain" "$wanted_remark" "$current_ip" || return 1
+    log "ℹ️ 腾讯云未找到 ${full_domain} [${wanted_line}] 的 A 记录，准备创建"
+    create_record "$sub_domain" "$full_domain" "$wanted_line" "$wanted_remark" "$current_ip" || return 1
     return 0
   fi
 
@@ -452,7 +453,7 @@ sync_tencent_dns_record() {
 
   if [ "$record_value" != "$current_ip" ]; then
     log "ℹ️ 腾讯云检测到 IP 变化：${full_domain} | ${record_value:-<空>} -> ${current_ip}"
-    modify_dynamic_dns "$sub_domain" "$full_domain" "$record_id" "$current_ip" || return 1
+    modify_dynamic_dns "$sub_domain" "$full_domain" "$wanted_line" "$record_id" "$current_ip" || return 1
   else
     log "ℹ️ 腾讯云 IP 未变化：${full_domain} -> ${current_ip}，无需更新"
   fi
@@ -465,14 +466,14 @@ sync_tencent_dns_record() {
 sync_tencent_dns() {
   local current_ip="$1"
 
-  sync_tencent_dns_record "$SUB_DOMAIN" "$FULL_DOMAIN" "$RECORD_REMARK" "$current_ip" || return 1
-  sync_tencent_dns_record "$SUB_DOMAIN_2" "$FULL_DOMAIN_2" "$RECORD_REMARK_2" "$current_ip" || return 1
+  sync_tencent_dns_record "$SUB_DOMAIN" "$FULL_DOMAIN" "$RECORD_LINE" "$RECORD_REMARK" "$current_ip" || return 1
+  sync_tencent_dns_record "$SUB_DOMAIN_2" "$FULL_DOMAIN_2" "$RECORD_LINE_2" "$RECORD_REMARK_2" "$current_ip" || return 1
 }
 
 validate_config() {
 
   local missing=() v
-  for v in SECRET_ID SECRET_KEY DOMAIN SUB_DOMAIN RECORD_TYPE RECORD_LINE RECORD_REMARK SUB_DOMAIN_2 RECORD_REMARK_2; do
+  for v in SECRET_ID SECRET_KEY DOMAIN SUB_DOMAIN RECORD_TYPE RECORD_LINE RECORD_REMARK SUB_DOMAIN_2 RECORD_LINE_2 RECORD_REMARK_2; do
     if [ -z "${!v:-}" ]; then
       missing+=("$v")
     fi
@@ -490,7 +491,7 @@ do_ddns_once() {
   log "=========================================="
   log "开始执行 DDNS 同步"
   log "腾讯云目标1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
-  log "腾讯云目标2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK_2}"
+  log "腾讯云目标2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
 
   validate_config || return 1
 
@@ -609,9 +610,8 @@ show_status() {
   local pid started_at runtime memory existing_count
   existing_count="$(count_existing_pids)"
   echo "脚本: ${SCRIPT_PATH}"
-  echo "腾讯云域名1: ${FULL_DOMAIN} | 备注: ${RECORD_REMARK}"
-  echo "腾讯云域名2: ${FULL_DOMAIN_2} | 备注: ${RECORD_REMARK_2}"
-  echo "线路: ${RECORD_LINE}"
+  echo "腾讯云域名1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
+  echo "腾讯云域名2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
   echo "间隔: ${CHECK_INTERVAL}s"
   echo "日志: ${LOG_FILE}"
 
@@ -703,9 +703,8 @@ run_daemon() {
 
   log "=========================================="
   log "腾讯云双记录 DDNS 后台服务已启动"
-  log "腾讯云域名1: ${FULL_DOMAIN} | 备注: ${RECORD_REMARK}"
-  log "腾讯云域名2: ${FULL_DOMAIN_2} | 备注: ${RECORD_REMARK_2}"
-  log "线路: ${RECORD_LINE}"
+  log "腾讯云域名1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
+  log "腾讯云域名2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
   log "检测间隔: ${CHECK_INTERVAL}s"
   log "日志文件: ${LOG_FILE}"
   log "获取 IP 方式: 公网 IPv4（优先 AWS Metadata，其次 ipip.net / ipify）"
