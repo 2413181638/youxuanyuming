@@ -69,6 +69,8 @@ LOG_PATHS_READY=0
 PID_FILE="/tmp/txcfddns-daemon-$(id -u).pid"
 LOCK_FILE="/tmp/txcfddns-daemon-$(id -u).lock"
 DAEMON_MARK="txcfddns-daemon-marker"
+SHORTCUT_CMD="txcfddns"
+SHORTCUT_PATH="/usr/local/bin/${SHORTCUT_CMD}"
 STARTED_AT_FILE=""
 IP_SOURCE=""
 
@@ -106,6 +108,7 @@ init_log_paths() {
 ensure_log_dir() {
   init_log_paths || return 1
   mkdir -p "$LOG_DIR" 2>/dev/null || return 1
+  touch "$LOG_FILE" 2>/dev/null || true
 }
 
 log() {
@@ -637,16 +640,26 @@ pid_is_running() {
   kill -0 "$pid" 2>/dev/null
 }
 
+pid_matches_daemon() {
+  local pid="${1:-}" cmdline=""
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  [ -r "/proc/${pid}/cmdline" ] || return 1
+  cmdline="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
+  case "$cmdline" in
+    *"${DAEMON_MARK}"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 list_matching_daemon_pids() {
-  local proc pid cmdline
+  local proc pid
   for proc in /proc/[0-9]*; do
     [ -r "$proc/cmdline" ] || continue
     pid="${proc##*/}"
     [ "$pid" = "$$" ] && continue
-    cmdline="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
-    case "$cmdline" in
-      *"${SCRIPT_PATH} --daemon ${DAEMON_MARK}"*) echo "$pid" ;;
-    esac
+    if pid_is_running "$pid" && pid_matches_daemon "$pid"; then
+      echo "$pid"
+    fi
   done | awk '!seen[$0]++'
 }
 
@@ -655,7 +668,7 @@ collect_existing_pids() {
     if [ -f "$PID_FILE" ]; then
       local pid_from_file
       pid_from_file="$(cat "$PID_FILE" 2>/dev/null || true)"
-      if pid_is_running "$pid_from_file" && [ "$pid_from_file" != "$$" ]; then
+      if pid_is_running "$pid_from_file" && pid_matches_daemon "$pid_from_file" && [ "$pid_from_file" != "$$" ]; then
         echo "$pid_from_file"
       fi
     fi
@@ -670,12 +683,12 @@ count_existing_pids() {
 refresh_pid_file() {
   local pid any_pid
   pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-  if pid_is_running "$pid"; then
+  if pid_is_running "$pid" && pid_matches_daemon "$pid"; then
     return 0
   fi
 
   any_pid="$(collect_existing_pids | sed -n '1p')"
-  if pid_is_running "$any_pid"; then
+  if pid_is_running "$any_pid" && pid_matches_daemon "$any_pid"; then
     echo "$any_pid" > "$PID_FILE"
     return 0
   fi
@@ -759,6 +772,7 @@ show_status() {
 
 show_logs() {
   ensure_log_dir
+  touch "$LOG_FILE" 2>/dev/null || true
   [ -f "$LOG_FILE" ] || {
     echo "日志不存在：${LOG_FILE}"
     return 1
@@ -770,12 +784,13 @@ show_logs() {
 
 follow_logs() {
   ensure_log_dir
+  touch "$LOG_FILE" 2>/dev/null || true
   [ -f "$LOG_FILE" ] || {
     echo "日志不存在：${LOG_FILE}"
     return 1
   }
   echo "按 Ctrl+C 退出实时日志"
-  tail -f "$LOG_FILE"
+  tail -n 50 -F "$LOG_FILE"
 }
 
 run_once_safely() {
@@ -845,6 +860,7 @@ run_daemon() {
 start_service() {
   ensure_log_dir
   ensure_dependencies
+  install_shortcut_quietly
 
   local existing_pids existing_count
   existing_pids="$(collect_existing_pids)"
@@ -855,10 +871,11 @@ start_service() {
     stop_existing_daemons
     sleep 1
   elif is_service_running; then
+    touch "$LOG_FILE" 2>/dev/null || true
     echo "✅ 后台 DDNS 已在运行"
     echo "PID : $(cat "$PID_FILE")"
     echo "日志: ${LOG_FILE}"
-    echo "查看: bash ${SCRIPT_PATH} follow"
+    show_quick_commands
     return 0
   elif [ -n "$existing_pids" ]; then
     echo "检测到残留旧进程，先清理..."
@@ -866,15 +883,17 @@ start_service() {
     sleep 1
   fi
 
+  touch "$LOG_FILE" 2>/dev/null || true
   echo "启动后台 DDNS 中..."
   nohup bash "$SCRIPT_PATH" --daemon "$DAEMON_MARK" >/dev/null 2>&1 &
   sleep 2
 
   if is_service_running; then
+    touch "$LOG_FILE" 2>/dev/null || true
     echo "✅ 启动成功"
     echo "PID : $(cat "$PID_FILE")"
     echo "日志: ${LOG_FILE}"
-    echo "查看: bash ${SCRIPT_PATH} follow"
+    show_quick_commands
   else
     echo "❌ 启动失败，请检查日志：${LOG_FILE}"
     return 1
@@ -970,6 +989,42 @@ run_menu() {
   done
 }
 
+
+show_quick_commands() {
+  echo "快捷命令:"
+  if [ -x "$SHORTCUT_PATH" ]; then
+    echo "  ${SHORTCUT_CMD}           打开管理面板"
+    echo "  ${SHORTCUT_CMD} start     启动后台"
+    echo "  ${SHORTCUT_CMD} stop      停止后台"
+    echo "  ${SHORTCUT_CMD} restart   重启后台"
+    echo "  ${SHORTCUT_CMD} status    查看状态"
+    echo "  ${SHORTCUT_CMD} logs      查看日志"
+    echo "  ${SHORTCUT_CMD} follow    实时日志"
+    echo "  ${SHORTCUT_CMD} once      立即执行一次 DDNS"
+  fi
+  echo "  bash ${SCRIPT_PATH} menu   打开管理面板"
+}
+
+install_shortcut_quietly() {
+  local dir target tmp
+  dir="$(dirname "$SHORTCUT_PATH")"
+  [ -n "$dir" ] || return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  [ -w "$dir" ] || return 0
+
+  tmp="${SHORTCUT_PATH}.tmp.$$"
+  cat > "$tmp" <<EOF
+#!/usr/bin/env bash
+if [ "\$#" -eq 0 ]; then
+  exec bash "${SCRIPT_PATH}" menu
+else
+  exec bash "${SCRIPT_PATH}" "\$@"
+fi
+EOF
+  chmod +x "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$SHORTCUT_PATH" 2>/dev/null || rm -f "$tmp"
+}
+
 usage() {
   cat <<USAGE
 用法：
@@ -982,11 +1037,18 @@ usage() {
   bash ${SCRIPT_NAME} follow      实时查看日志
   bash ${SCRIPT_NAME} once        立即执行一次 DDNS
   bash ${SCRIPT_NAME} menu        打开管理面板
+  bash ${SCRIPT_NAME} panel       打开管理面板
+
+快捷方式：
+  txcfddns                        打开管理面板
+  txcfddns start|stop|restart
+  txcfddns status|logs|follow|once
 USAGE
 }
 
 main() {
   ensure_log_dir
+  install_shortcut_quietly
 
   case "${1:-}" in
     --daemon)
@@ -1013,7 +1075,7 @@ main() {
     follow)
       follow_logs
       ;;
-    menu)
+    menu|panel|ui)
       run_menu
       ;;
     "")
