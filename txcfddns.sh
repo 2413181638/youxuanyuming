@@ -1,36 +1,42 @@
 #!/usr/bin/env bash
 #
-# 腾讯云 DNSPod 双记录 DDNS 脚本（直接获取公网 IPv4）
-# 默认运行即启动后台服务，避免重复进程。
+# 腾讯云 DNSPod 香港 DDNS（单文件版）
+# - 只有这一个脚本文件
+# - 支持后台守护
+# - 支持开机自启安装/卸载（systemd）
 #
 # 用法：
-#   bash txcfddns.sh           # 直接启动后台服务（若已运行则不重复启动）
-#   bash txcfddns.sh start     # 启动后台服务
-#   bash txcfddns.sh stop      # 停止后台服务
-#   bash txcfddns.sh restart   # 重启后台服务
-#   bash txcfddns.sh status    # 查看状态
-#   bash txcfddns.sh logs      # 查看最近日志
-#   bash txcfddns.sh follow    # 实时查看日志
-#   bash txcfddns.sh once      # 立即执行一次 DDNS
-#   bash txcfddns.sh menu      # 打开管理面板
+#   bash txcfddns-awshk.sh            # 直接启动后台 DDNS
+#   bash txcfddns-awshk.sh start      # 启动后台 DDNS
+#   bash txcfddns-awshk.sh stop       # 停止后台 DDNS
+#   bash txcfddns-awshk.sh restart    # 重启后台 DDNS
+#   bash txcfddns-awshk.sh status     # 查看状态
+#   bash txcfddns-awshk.sh logs       # 查看最近日志
+#   bash txcfddns-awshk.sh follow     # 实时查看日志
+#   bash txcfddns-awshk.sh once       # 立即执行一次 DDNS
+#   bash txcfddns-awshk.sh menu       # 打开管理面板
+#   bash txcfddns-awshk.sh install    # 安装 systemd 开机自启
+#   bash txcfddns-awshk.sh uninstall  # 卸载 systemd 开机自启
 #
 
 set -u
 set -o pipefail
 
 # ========== 用户配置区 ==========
-SECRET_ID="AKIDW6SZR5ZqsfEajfR1NXTChy1rUu64nMwQ"
-SECRET_KEY="VN8h2CAxYu1sUr0xlIciaFguvxpUxFNL"
+SECRET_ID="REPLACE_WITH_YOUR_SECRET_ID"
+SECRET_KEY="REPLACE_WITH_YOUR_SECRET_KEY"
 
 # 已不再使用外部 IP 查询，但保留原值，避免误删。
 AWS_SB_SGT="4d48e86004924a0b9ce4a6c99816cee7"
 
-# 腾讯云 DNSPod
+# 腾讯云 DNSPod（香港专用独立实例）
+INSTANCE_NAME="awshk"
+
 DOMAIN="woainiliz.com"
 SUB_DOMAIN="swswsw"
 FULL_DOMAIN="${SUB_DOMAIN}.${DOMAIN}"
 RECORD_TYPE="A"
-RECORD_LINE="移动"
+RECORD_LINE="默认"
 RECORD_REMARK="aws3whk"
 
 SUB_DOMAIN_2="ahkwsddns"
@@ -54,18 +60,20 @@ CONTENT_TYPE="application/json; charset=utf-8"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_NAME}"
-LOG_DIR_CANDIDATE="${LOG_DIR:-${HOME:-/tmp}/.txcfddns}"
+LOG_DIR_CANDIDATE="${LOG_DIR:-${HOME:-/tmp}/.txcfddns-${INSTANCE_NAME}}"
 LOG_FILE_CANDIDATE="${LOG_FILE:-}"
 LOG_DIR=""
 LOG_FILE=""
 LOG_PATHS_READY=0
-PID_FILE="/tmp/txcfddns-daemon-$(id -u).pid"
-LOCK_FILE="/tmp/txcfddns-daemon-$(id -u).lock"
-DAEMON_MARK="txcfddns-daemon-marker"
-SHORTCUT_CMD="txcfddns"
+PID_FILE="/tmp/txcfddns-${INSTANCE_NAME}-daemon-$(id -u).pid"
+LOCK_FILE="/tmp/txcfddns-${INSTANCE_NAME}-daemon-$(id -u).lock"
+DAEMON_MARK="txcfddns-daemon-marker-${INSTANCE_NAME}"
+SHORTCUT_CMD="txcfddns-${INSTANCE_NAME}"
 SHORTCUT_PATH="/usr/local/bin/${SHORTCUT_CMD}"
 STARTED_AT_FILE=""
 IP_SOURCE=""
+SYSTEMD_SERVICE_NAME="txcfddns-${INSTANCE_NAME}.service"
+SYSTEMD_SERVICE_PATH="/etc/systemd/system/${SYSTEMD_SERVICE_NAME}"
 
 init_log_paths() {
   [ "${LOG_PATHS_READY:-0}" = "1" ] && return 0
@@ -75,7 +83,7 @@ init_log_paths() {
     candidates+=("$(dirname "$LOG_FILE_CANDIDATE")")
   fi
   [ -n "${LOG_DIR_CANDIDATE}" ] && candidates+=("${LOG_DIR_CANDIDATE}")
-  candidates+=("/tmp/txcfddns-$(id -u)")
+  candidates+=("/tmp/txcfddns-${INSTANCE_NAME}-$(id -u)")
 
   for dir in "${candidates[@]}"; do
     [ -n "$dir" ] || continue
@@ -181,10 +189,6 @@ ensure_dependencies() {
       exit 1
     }
   done
-}
-
-random_suffix() {
-  tr -dc 'a-z0-9' < /dev/urandom | head -c 13
 }
 
 is_ipv4() {
@@ -297,7 +301,6 @@ tc_api() {
 
   printf '%s' "$response"
 }
-
 
 get_aws_metadata_public_ipv4() {
   local token="" ip=""
@@ -465,13 +468,11 @@ sync_tencent_dns_record() {
 
 sync_tencent_dns() {
   local current_ip="$1"
-
   sync_tencent_dns_record "$SUB_DOMAIN" "$FULL_DOMAIN" "$RECORD_LINE" "$RECORD_REMARK" "$current_ip" || return 1
   sync_tencent_dns_record "$SUB_DOMAIN_2" "$FULL_DOMAIN_2" "$RECORD_LINE_2" "$RECORD_REMARK_2" "$current_ip" || return 1
 }
 
 validate_config() {
-
   local missing=() v
   for v in SECRET_ID SECRET_KEY DOMAIN SUB_DOMAIN RECORD_TYPE RECORD_LINE RECORD_REMARK SUB_DOMAIN_2 RECORD_LINE_2 RECORD_REMARK_2; do
     if [ -z "${!v:-}" ]; then
@@ -481,6 +482,11 @@ validate_config() {
 
   if [ "${#missing[@]}" -gt 0 ]; then
     log "❌ 配置缺失：${missing[*]}"
+    return 1
+  fi
+
+  if [[ "${SECRET_ID}" == REPLACE_WITH_* ]] || [[ "${SECRET_KEY}" == REPLACE_WITH_* ]]; then
+    log "❌ 请先把 SECRET_ID / SECRET_KEY 改成你自己的腾讯云密钥"
     return 1
   fi
 }
@@ -610,10 +616,12 @@ show_status() {
   local pid started_at runtime memory existing_count
   existing_count="$(count_existing_pids)"
   echo "脚本: ${SCRIPT_PATH}"
+  echo "实例: ${INSTANCE_NAME}"
   echo "腾讯云域名1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
   echo "腾讯云域名2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
   echo "间隔: ${CHECK_INTERVAL}s"
   echo "日志: ${LOG_FILE}"
+  echo "systemd: ${SYSTEMD_SERVICE_NAME}"
 
   if is_service_running; then
     pid="$(cat "$PID_FILE")"
@@ -630,6 +638,14 @@ show_status() {
   else
     echo "状态: 🔴 已停止"
     rm -f "$STARTED_AT_FILE"
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-enabled "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1; then
+      echo "开机自启: ✅ 已启用"
+    else
+      echo "开机自启: ❌ 未启用"
+    fi
   fi
 
   if [ "${existing_count}" -gt 1 ] 2>/dev/null; then
@@ -702,7 +718,8 @@ run_daemon() {
   trap 'daemon_cleanup' EXIT
 
   log "=========================================="
-  log "腾讯云双记录 DDNS 后台服务已启动"
+  log "腾讯云香港 DDNS 单文件后台服务已启动"
+  log "实例: ${INSTANCE_NAME}"
   log "腾讯云域名1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
   log "腾讯云域名2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
   log "检测间隔: ${CHECK_INTERVAL}s"
@@ -720,6 +737,150 @@ run_daemon() {
     sleep "$CHECK_INTERVAL" &
     wait $! 2>/dev/null || true
   done
+}
+
+write_systemd_unit() {
+  cat > "${SYSTEMD_SERVICE_PATH}" <<EOF
+[Unit]
+Description=DNSPod DDNS (${INSTANCE_NAME})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env bash "${SCRIPT_PATH}" --daemon
+ExecStop=/usr/bin/env bash "${SCRIPT_PATH}" stop
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+install_autostart() {
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "❌ install 需要 root 权限"
+    return 1
+  fi
+
+  ensure_dependencies
+  chmod +x "${SCRIPT_PATH}" 2>/dev/null || true
+  write_systemd_unit || {
+    echo "❌ 写入 systemd 服务文件失败: ${SYSTEMD_SERVICE_PATH}"
+    return 1
+  }
+
+  systemctl daemon-reload
+  systemctl enable "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1 || {
+    echo "❌ systemctl enable 失败"
+    return 1
+  }
+  systemctl restart "${SYSTEMD_SERVICE_NAME}" || {
+    echo "❌ systemctl restart 失败"
+    return 1
+  }
+
+  echo "✅ 已安装开机自启"
+  echo "服务名: ${SYSTEMD_SERVICE_NAME}"
+  echo "查看状态: systemctl status ${SYSTEMD_SERVICE_NAME}"
+}
+
+uninstall_autostart() {
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "❌ uninstall 需要 root 权限"
+    return 1
+  fi
+
+  systemctl stop "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1 || true
+  systemctl disable "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1 || true
+  rm -f "${SYSTEMD_SERVICE_PATH}"
+  systemctl daemon-reload
+  echo "✅ 已卸载开机自启"
+}
+
+show_menu_screen() {
+  if command -v clear >/dev/null 2>&1; then
+    clear
+  else
+    printf '\033c'
+  fi
+
+  echo "╔══════════════════════════════════════════════╗"
+  echo "║     腾讯云香港 DDNS 单文件管理面板          ║"
+  echo "╠══════════════════════════════════════════════╣"
+  show_status
+  echo "╠══════════════════════════════════════════════╣"
+  echo "║  1. 启动后台 DDNS                           ║"
+  echo "║  2. 停止后台 DDNS                           ║"
+  echo "║  3. 重启后台 DDNS                           ║"
+  echo "║  4. 查看最近日志                            ║"
+  echo "║  5. 实时日志                                ║"
+  echo "║  6. 立即执行一次 DDNS                       ║"
+  echo "║  7. 安装开机自启                            ║"
+  echo "║  8. 卸载开机自启                            ║"
+  echo "║  0. 退出                                    ║"
+  echo "╚══════════════════════════════════════════════╝"
+}
+
+run_menu() {
+  ensure_dependencies
+  while true; do
+    show_menu_screen
+    read -rp "请选择 [0-8]: " choice
+    case "$choice" in
+      1) echo; start_service ;;
+      2) echo; stop_service ;;
+      3) echo; restart_service ;;
+      4) echo; show_logs ;;
+      5) echo; follow_logs ;;
+      6) echo; run_once_safely ;;
+      7) echo; install_autostart ;;
+      8) echo; uninstall_autostart ;;
+      0) echo; echo "退出管理面板"; return 0 ;;
+      *) echo; echo "无效选择，请重新输入" ;;
+    esac
+    echo
+    read -rp "按回车继续..." _unused
+  done
+}
+
+show_quick_commands() {
+  echo "快捷命令:"
+  if [ -x "$SHORTCUT_PATH" ]; then
+    echo "  ${SHORTCUT_CMD}             打开管理面板"
+    echo "  ${SHORTCUT_CMD} start       启动后台"
+    echo "  ${SHORTCUT_CMD} stop        停止后台"
+    echo "  ${SHORTCUT_CMD} restart     重启后台"
+    echo "  ${SHORTCUT_CMD} status      查看状态"
+    echo "  ${SHORTCUT_CMD} logs        查看日志"
+    echo "  ${SHORTCUT_CMD} follow      实时日志"
+    echo "  ${SHORTCUT_CMD} once        立即执行一次 DDNS"
+    echo "  ${SHORTCUT_CMD} install     安装开机自启"
+    echo "  ${SHORTCUT_CMD} uninstall   卸载开机自启"
+  fi
+  echo "  bash ${SCRIPT_PATH} menu    打开管理面板"
+}
+
+install_shortcut_quietly() {
+  local dir tmp
+  dir="$(dirname "$SHORTCUT_PATH")"
+  [ -n "$dir" ] || return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  [ -w "$dir" ] || return 0
+
+  tmp="${SHORTCUT_PATH}.tmp.$$"
+  cat > "$tmp" <<EOF
+#!/usr/bin/env bash
+if [ "\$#" -eq 0 ]; then
+  exec bash "${SCRIPT_PATH}" menu
+else
+  exec bash "${SCRIPT_PATH}" "\$@"
+fi
+EOF
+  chmod +x "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$SHORTCUT_PATH" 2>/dev/null || rm -f "$tmp"
 }
 
 start_service() {
@@ -787,113 +948,10 @@ restart_service() {
   start_service
 }
 
-show_menu_screen() {
-  if command -v clear >/dev/null 2>&1; then
-    clear
-  else
-    printf '\033c'
-  fi
-
-  echo "╔══════════════════════════════════════════════╗"
-  echo "║      腾讯云双记录 DDNS 管理面板      ║"
-  echo "╠══════════════════════════════════════════════╣"
-  show_status
-  echo "╠══════════════════════════════════════════════╣"
-  echo "║  1. 启动后台 DDNS                           ║"
-  echo "║  2. 停止后台 DDNS                           ║"
-  echo "║  3. 重启后台 DDNS                           ║"
-  echo "║  4. 查看最近日志                            ║"
-  echo "║  5. 实时日志                                ║"
-  echo "║  6. 立即执行一次 DDNS                       ║"
-  echo "║  0. 退出                                    ║"
-  echo "╚══════════════════════════════════════════════╝"
-}
-
-run_menu() {
-  ensure_dependencies
-  while true; do
-    show_menu_screen
-    read -rp "请选择 [0-6]: " choice
-    case "$choice" in
-      1)
-        echo
-        start_service
-        ;;
-      2)
-        echo
-        stop_service
-        ;;
-      3)
-        echo
-        restart_service
-        ;;
-      4)
-        echo
-        show_logs
-        ;;
-      5)
-        echo
-        follow_logs
-        ;;
-      6)
-        echo
-        run_once_safely
-        ;;
-      0)
-        echo
-        echo "退出管理面板"
-        return 0
-        ;;
-      *)
-        echo
-        echo "无效选择，请重新输入"
-        ;;
-    esac
-    echo
-    read -rp "按回车继续..." _unused
-  done
-}
-
-
-show_quick_commands() {
-  echo "快捷命令:"
-  if [ -x "$SHORTCUT_PATH" ]; then
-    echo "  ${SHORTCUT_CMD}           启动后台 DDNS"
-    echo "  ${SHORTCUT_CMD} start     启动后台"
-    echo "  ${SHORTCUT_CMD} stop      停止后台"
-    echo "  ${SHORTCUT_CMD} restart   重启后台"
-    echo "  ${SHORTCUT_CMD} status    查看状态"
-    echo "  ${SHORTCUT_CMD} logs      查看日志"
-    echo "  ${SHORTCUT_CMD} follow    实时日志"
-    echo "  ${SHORTCUT_CMD} once      立即执行一次 DDNS"
-  fi
-  echo "  bash ${SCRIPT_PATH} menu   打开管理面板"
-}
-
-install_shortcut_quietly() {
-  local dir target tmp
-  dir="$(dirname "$SHORTCUT_PATH")"
-  [ -n "$dir" ] || return 0
-  mkdir -p "$dir" 2>/dev/null || return 0
-  [ -w "$dir" ] || return 0
-
-  tmp="${SHORTCUT_PATH}.tmp.$$"
-  cat > "$tmp" <<EOF
-#!/usr/bin/env bash
-if [ "\$#" -eq 0 ]; then
-  exec bash "${SCRIPT_PATH}" start
-else
-  exec bash "${SCRIPT_PATH}" "\$@"
-fi
-EOF
-  chmod +x "$tmp" 2>/dev/null || true
-  mv -f "$tmp" "$SHORTCUT_PATH" 2>/dev/null || rm -f "$tmp"
-}
-
 usage() {
   cat <<USAGE
 用法：
-  bash ${SCRIPT_NAME}             直接启动后台 DDNS（若已运行则不重复启动）
+  bash ${SCRIPT_NAME}             直接启动后台 DDNS
   bash ${SCRIPT_NAME} start       启动后台 DDNS
   bash ${SCRIPT_NAME} stop        停止后台 DDNS
   bash ${SCRIPT_NAME} restart     重启后台 DDNS
@@ -902,13 +960,13 @@ usage() {
   bash ${SCRIPT_NAME} follow      实时查看日志
   bash ${SCRIPT_NAME} once        立即执行一次 DDNS
   bash ${SCRIPT_NAME} menu        打开管理面板
-  bash ${SCRIPT_NAME} panel       打开管理面板
+  bash ${SCRIPT_NAME} install     安装开机自启
+  bash ${SCRIPT_NAME} uninstall   卸载开机自启
 
 快捷方式：
-  txcfddns                        启动后台 DDNS
-  txcfddns start|stop|restart
-  txcfddns status|logs|follow|once
-  txcfddns menu                  打开管理面板
+  ${SHORTCUT_CMD}                打开管理面板
+  ${SHORTCUT_CMD} start|stop|restart|status
+  ${SHORTCUT_CMD} logs|follow|once|install|uninstall
 USAGE
 }
 
@@ -943,6 +1001,12 @@ main() {
       ;;
     menu|panel|ui)
       run_menu
+      ;;
+    install|enable)
+      install_autostart
+      ;;
+    uninstall|disable)
+      uninstall_autostart
       ;;
     "")
       start_service
