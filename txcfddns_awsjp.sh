@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# 腾讯云 DNSPod 双记录 DDNS 脚本（直接获取公网 IPv4）
+# 腾讯云 DNSPod 三记录 DDNS 脚本（直接获取公网 IPv4）
 # 默认运行即启动后台服务，避免重复进程。
 #
 # 用法：
@@ -40,6 +40,12 @@ FULL_DOMAIN_2="${SUB_DOMAIN_2}.${DOMAIN}"
 RECORD_LINE_2="默认"
 RECORD_REMARK_2="awsjpddns"
 
+# 新增第 3 条解析记录
+SUB_DOMAIN_3="swswsw"
+FULL_DOMAIN_3="${SUB_DOMAIN_3}.${DOMAIN}"
+RECORD_LINE_3="默认"
+RECORD_REMARK_3="aws3wjp"
+
 CHECK_INTERVAL=60
 DEBUG="false"
 # ================================
@@ -48,6 +54,8 @@ DEBUG="false"
 if [ "${SUB_DOMAIN}" = "@" ]; then FULL_DOMAIN="${DOMAIN}"; fi
 [ "${SUB_DOMAIN_2}" = "@" ] || [ -n "${SUB_DOMAIN_2}" ] || FULL_DOMAIN_2="${DOMAIN}"
 if [ "${SUB_DOMAIN_2}" = "@" ]; then FULL_DOMAIN_2="${DOMAIN}"; fi
+[ "${SUB_DOMAIN_3}" = "@" ] || [ -n "${SUB_DOMAIN_3}" ] || FULL_DOMAIN_3="${DOMAIN}"
+if [ "${SUB_DOMAIN_3}" = "@" ]; then FULL_DOMAIN_3="${DOMAIN}"; fi
 
 SERVICE="dnspod"
 HOST="dnspod.tencentcloudapi.com"
@@ -470,12 +478,13 @@ sync_tencent_dns() {
 
   sync_tencent_dns_record "$SUB_DOMAIN" "$FULL_DOMAIN" "$RECORD_LINE" "$RECORD_REMARK" "$current_ip" || return 1
   sync_tencent_dns_record "$SUB_DOMAIN_2" "$FULL_DOMAIN_2" "$RECORD_LINE_2" "$RECORD_REMARK_2" "$current_ip" || return 1
+  sync_tencent_dns_record "$SUB_DOMAIN_3" "$FULL_DOMAIN_3" "$RECORD_LINE_3" "$RECORD_REMARK_3" "$current_ip" || return 1
 }
 
 validate_config() {
 
   local missing=() v
-  for v in SECRET_ID SECRET_KEY DOMAIN SUB_DOMAIN RECORD_TYPE RECORD_LINE RECORD_REMARK SUB_DOMAIN_2 RECORD_LINE_2 RECORD_REMARK_2; do
+  for v in SECRET_ID SECRET_KEY DOMAIN SUB_DOMAIN RECORD_TYPE RECORD_LINE RECORD_REMARK SUB_DOMAIN_2 RECORD_LINE_2 RECORD_REMARK_2 SUB_DOMAIN_3 RECORD_LINE_3 RECORD_REMARK_3; do
     if [ -z "${!v:-}" ]; then
       missing+=("$v")
     fi
@@ -494,6 +503,7 @@ do_ddns_once() {
   log "开始执行 DDNS 同步"
   log "腾讯云目标1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
   log "腾讯云目标2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
+  log "腾讯云目标3: ${FULL_DOMAIN_3} | 线路: ${RECORD_LINE_3} | 备注: ${RECORD_REMARK_3}"
 
   validate_config || return 1
 
@@ -614,6 +624,7 @@ show_status() {
   echo "脚本: ${SCRIPT_PATH}"
   echo "腾讯云域名1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
   echo "腾讯云域名2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
+  echo "腾讯云域名3: ${FULL_DOMAIN_3} | 线路: ${RECORD_LINE_3} | 备注: ${RECORD_REMARK_3}"
   echo "间隔: ${CHECK_INTERVAL}s"
   echo "日志: ${LOG_FILE}"
 
@@ -704,9 +715,10 @@ run_daemon() {
   trap 'daemon_cleanup' EXIT
 
   log "=========================================="
-  log "腾讯云双记录 DDNS 后台服务已启动"
+  log "腾讯云三记录 DDNS 后台服务已启动"
   log "腾讯云域名1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
   log "腾讯云域名2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
+  log "腾讯云域名3: ${FULL_DOMAIN_3} | 线路: ${RECORD_LINE_3} | 备注: ${RECORD_REMARK_3}"
   log "检测间隔: ${CHECK_INTERVAL}s"
   log "日志文件: ${LOG_FILE}"
   log "获取 IP 方式: 公网 IPv4（优先 AWS Metadata，其次 ipip.net / ipify）"
@@ -797,7 +809,7 @@ show_menu_screen() {
   fi
 
   echo "╔══════════════════════════════════════════════╗"
-  echo "║      腾讯云双记录 DDNS 管理面板      ║"
+  echo "║      腾讯云三记录 DDNS 管理面板      ║"
   echo "╠══════════════════════════════════════════════╣"
   show_status
   echo "╠══════════════════════════════════════════════╣"
