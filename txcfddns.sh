@@ -36,7 +36,7 @@ DOMAIN="woainiliz.com"
 SUB_DOMAIN="swswsw"
 FULL_DOMAIN="${SUB_DOMAIN}.${DOMAIN}"
 RECORD_TYPE="A"
-RECORD_LINE="移动"
+RECORD_LINE="默认"
 RECORD_REMARK="aws3whk"
 
 SUB_DOMAIN_2="ahkwsddns"
@@ -643,6 +643,11 @@ show_status() {
   if command -v systemctl >/dev/null 2>&1; then
     if systemctl is-enabled "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1; then
       echo "开机自启: ✅ 已启用"
+      if systemctl is-active "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1; then
+        echo "systemd状态: 🟢 active"
+      else
+        echo "systemd状态: 🔴 inactive"
+      fi
     else
       echo "开机自启: ❌ 未启用"
     fi
@@ -748,7 +753,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env bash "${SCRIPT_PATH}" --daemon
+ExecStart=/usr/bin/env bash "${SCRIPT_PATH}" --daemon "${DAEMON_MARK}"
 ExecStop=/usr/bin/env bash "${SCRIPT_PATH}" stop
 Restart=always
 RestartSec=5
@@ -773,16 +778,19 @@ install_autostart() {
   }
 
   systemctl daemon-reload
-  systemctl enable "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1 || {
-    echo "❌ systemctl enable 失败"
-    return 1
-  }
-  systemctl restart "${SYSTEMD_SERVICE_NAME}" || {
-    echo "❌ systemctl restart 失败"
+  systemctl daemon-reload
+  systemctl enable --now "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1 || {
+    echo "❌ systemctl enable --now 失败"
     return 1
   }
 
-  echo "✅ 已安装开机自启"
+  if ! systemctl is-active --quiet "${SYSTEMD_SERVICE_NAME}"; then
+    echo "❌ 服务未成功启动"
+    systemctl status "${SYSTEMD_SERVICE_NAME}" --no-pager -l || true
+    return 1
+  fi
+
+  echo "✅ 已安装开机自启并立即启动"
   echo "服务名: ${SYSTEMD_SERVICE_NAME}"
   echo "查看状态: systemctl status ${SYSTEMD_SERVICE_NAME}"
 }
