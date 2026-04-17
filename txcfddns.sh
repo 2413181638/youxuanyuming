@@ -36,7 +36,7 @@ DOMAIN="woainiliz.com"
 SUB_DOMAIN="swswsw"
 FULL_DOMAIN="${SUB_DOMAIN}.${DOMAIN}"
 RECORD_TYPE="A"
-RECORD_LINE="默认"
+RECORD_LINE="移动"
 RECORD_REMARK="aws3whk"
 
 SUB_DOMAIN_2="ahkwsddns"
