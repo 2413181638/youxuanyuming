@@ -858,7 +858,7 @@ run_menu() {
 show_quick_commands() {
   echo "快捷命令:"
   if [ -x "$SHORTCUT_PATH" ]; then
-    echo "  ${SHORTCUT_CMD}           打开管理面板"
+    echo "  ${SHORTCUT_CMD}           启动后台 DDNS"
     echo "  ${SHORTCUT_CMD} start     启动后台"
     echo "  ${SHORTCUT_CMD} stop      停止后台"
     echo "  ${SHORTCUT_CMD} restart   重启后台"
@@ -881,7 +881,7 @@ install_shortcut_quietly() {
   cat > "$tmp" <<EOF
 #!/usr/bin/env bash
 if [ "\$#" -eq 0 ]; then
-  exec bash "${SCRIPT_PATH}" menu
+  exec bash "${SCRIPT_PATH}" start
 else
   exec bash "${SCRIPT_PATH}" "\$@"
 fi
@@ -905,9 +905,10 @@ usage() {
   bash ${SCRIPT_NAME} panel       打开管理面板
 
 快捷方式：
-  txcfddns                        打开管理面板
+  txcfddns                        启动后台 DDNS
   txcfddns start|stop|restart
   txcfddns status|logs|follow|once
+  txcfddns menu                  打开管理面板
 USAGE
 }
 
