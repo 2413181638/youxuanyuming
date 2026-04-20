@@ -1,207 +1,158 @@
 #!/usr/bin/env bash
-#
-# 腾讯云 DNSPod 香港 DDNS（单文件版）
-# - 只有这一个脚本文件
-# - 支持后台守护
-# - 支持开机自启安装/卸载（systemd）
-#
-# 用法：
-#   bash txcfddns-awshk.sh            # 直接启动后台 DDNS
-#   bash txcfddns-awshk.sh start      # 启动后台 DDNS
-#   bash txcfddns-awshk.sh stop       # 停止后台 DDNS
-#   bash txcfddns-awshk.sh restart    # 重启后台 DDNS
-#   bash txcfddns-awshk.sh status     # 查看状态
-#   bash txcfddns-awshk.sh logs       # 查看最近日志
-#   bash txcfddns-awshk.sh follow     # 实时查看日志
-#   bash txcfddns-awshk.sh once       # 立即执行一次 DDNS
-#   bash txcfddns-awshk.sh menu       # 打开管理面板
-#   bash txcfddns-awshk.sh install    # 安装 systemd 开机自启
-#   bash txcfddns-awshk.sh uninstall  # 卸载 systemd 开机自启
-#
+if [ -z "${BASH_VERSION:-}" ]; then
+  echo "错误：请用 bash 执行，不要用 sh。示例：bash txcfddns-awshk-bootfix.sh start" >&2
+  exit 2
+fi
+# 腾讯云 DNSPod 香港 DDNS - AWS 开机小助手极速版
+# 特点：
+# 1) 密钥已内置到文件，适合无环境变量的开机小助手。
+# 2) start 模式可快速返回，适合首次手工拉起或兼容旧调用。
+# 3) 不使用 jq，不自动 apt/yum 安装依赖，避免开机阶段卡住。
+# 4) install-service 会把脚本固定安装到 /usr/local/sbin，并交给 systemd 托管。
 
 set -u
 set -o pipefail
 
 # ========== 用户配置区 ==========
-SECRET_ID="REPLACE_WITH_YOUR_SECRET_ID"
-SECRET_KEY="REPLACE_WITH_YOUR_SECRET_KEY"
+# 已按你的要求：SecretId / SecretKey 直接写进脚本文件。
+# 请只保存到可信服务器，并执行 chmod 700 限制权限。
+SECRET_ID="AKIDW6SZR5ZqsfEajfR1NXTChy1rUu64nMwQ"
+SECRET_KEY="VN8h2CAxYu1sUr0xlIciaFguvxpUxFNL"
 
-# 已不再使用外部 IP 查询，但保留原值，避免误删。
-AWS_SB_SGT="4d48e86004924a0b9ce4a6c99816cee7"
-
-# 腾讯云 DNSPod（香港专用独立实例）
 INSTANCE_NAME="awshk"
-
 DOMAIN="woainiliz.com"
-SUB_DOMAIN="swswsw"
-FULL_DOMAIN="${SUB_DOMAIN}.${DOMAIN}"
 RECORD_TYPE="A"
-RECORD_LINE="默认"
-RECORD_REMARK="aws3whk"
+
+SUB_DOMAIN_1="swswsw"
+FULL_DOMAIN_1="${SUB_DOMAIN_1}.${DOMAIN}"
+RECORD_LINE_1="移动"
+RECORD_REMARK_1="aws3whk"
+# 填 RecordId 后速度最快；留空时会先 DescribeRecordList 查询。
+RECORD_ID_1=""
 
 SUB_DOMAIN_2="ahkwsddns"
 FULL_DOMAIN_2="${SUB_DOMAIN_2}.${DOMAIN}"
 RECORD_LINE_2="默认"
 RECORD_REMARK_2="awshkddns"
+RECORD_ID_2=""
 
+# 后台重试：开机早期网络没准备好时，不阻塞开机小助手，由后台慢慢重试。
+RETRY_TIMES=12
+RETRY_SLEEP=5
+
+# daemon 模式轮询间隔
 CHECK_INTERVAL=60
-DEBUG="false"
-# ================================
 
-[ "${SUB_DOMAIN}" = "@" ] || [ -n "${SUB_DOMAIN}" ] || FULL_DOMAIN="${DOMAIN}"
-if [ "${SUB_DOMAIN}" = "@" ]; then FULL_DOMAIN="${DOMAIN}"; fi
-[ "${SUB_DOMAIN_2}" = "@" ] || [ -n "${SUB_DOMAIN_2}" ] || FULL_DOMAIN_2="${DOMAIN}"
-if [ "${SUB_DOMAIN_2}" = "@" ]; then FULL_DOMAIN_2="${DOMAIN}"; fi
+# 为减少重复 API 调用，记录最近一次成功同步的 IP。
+# 但只靠缓存会漏掉“记录被手工改坏/删除”的情况，所以每隔 FORCE_SYNC_INTERVAL
+# 仍会强制同步一次。
+IP_CACHE_FILE="/tmp/txcfddns-${INSTANCE_NAME}-lastip.txt"
+LAST_SYNC_FILE="/tmp/txcfddns-${INSTANCE_NAME}-lastsync.txt"
+FORCE_SYNC_INTERVAL=3600
+
+# API 超时：start 不受这些影响，只有 worker/once 会使用。
+IMDS_CONNECT_TIMEOUT="1"
+IMDS_MAX_TIME="2"
+API_CONNECT_TIMEOUT="3"
+API_MAX_TIME="10"
+# ================================
 
 SERVICE="dnspod"
 HOST="dnspod.tencentcloudapi.com"
 VERSION="2021-03-23"
 CONTENT_TYPE="application/json; charset=utf-8"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
-SCRIPT_NAME="$(basename "$0")"
-SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_NAME}"
-LOG_DIR_CANDIDATE="${LOG_DIR:-${HOME:-/tmp}/.txcfddns-${INSTANCE_NAME}}"
-LOG_FILE_CANDIDATE="${LOG_FILE:-}"
-LOG_DIR=""
-LOG_FILE=""
-LOG_PATHS_READY=0
-PID_FILE="/tmp/txcfddns-${INSTANCE_NAME}-daemon-$(id -u).pid"
-LOCK_FILE="/tmp/txcfddns-${INSTANCE_NAME}-daemon-$(id -u).lock"
-DAEMON_MARK="txcfddns-daemon-marker-${INSTANCE_NAME}"
-SHORTCUT_CMD="txcfddns-${INSTANCE_NAME}"
-SHORTCUT_PATH="/usr/local/bin/${SHORTCUT_CMD}"
-STARTED_AT_FILE=""
-IP_SOURCE=""
-SYSTEMD_SERVICE_NAME="txcfddns-${INSTANCE_NAME}.service"
-SYSTEMD_SERVICE_PATH="/etc/systemd/system/${SYSTEMD_SERVICE_NAME}"
+SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+LOG_DIR="/var/log/txcfddns-${INSTANCE_NAME}"
+[ -w /var/log ] || LOG_DIR="/tmp/txcfddns-${INSTANCE_NAME}"
+LOG_FILE="${LOG_DIR}/txcfddns-fast.log"
+PID_FILE="/tmp/txcfddns-${INSTANCE_NAME}-fast.pid"
+LOCK_DIR="/tmp/txcfddns-${INSTANCE_NAME}-fast.lockdir"
+INSTALL_PATH="/usr/local/sbin/txcfddns-${INSTANCE_NAME}-fast.sh"
+UNIT_NAME="txcfddns-${INSTANCE_NAME}.service"
+UNIT_PATH="/etc/systemd/system/${UNIT_NAME}"
 
-init_log_paths() {
-  [ "${LOG_PATHS_READY:-0}" = "1" ] && return 0
-
-  local candidates=() dir test_file
-  if [ -n "${LOG_FILE_CANDIDATE}" ]; then
-    candidates+=("$(dirname "$LOG_FILE_CANDIDATE")")
-  fi
-  [ -n "${LOG_DIR_CANDIDATE}" ] && candidates+=("${LOG_DIR_CANDIDATE}")
-  candidates+=("/tmp/txcfddns-${INSTANCE_NAME}-$(id -u)")
-
-  for dir in "${candidates[@]}"; do
-    [ -n "$dir" ] || continue
-    mkdir -p "$dir" 2>/dev/null || continue
-    test_file="${dir}/.write_test.$$"
-    if : > "$test_file" 2>/dev/null; then
-      rm -f "$test_file"
-      LOG_DIR="$dir"
-      if [ -n "${LOG_FILE_CANDIDATE}" ] && [ "$(dirname "$LOG_FILE_CANDIDATE")" = "$dir" ]; then
-        LOG_FILE="${LOG_FILE_CANDIDATE}"
-      else
-        LOG_FILE="${LOG_DIR}/txcfddns.log"
-      fi
-      STARTED_AT_FILE="${LOG_DIR}/txcfddns.started_at"
-      LOG_PATHS_READY=1
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-ensure_log_dir() {
-  init_log_paths || return 1
-  mkdir -p "$LOG_DIR" 2>/dev/null || return 1
-  touch "$LOG_FILE" 2>/dev/null || true
-}
+mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 log() {
   local msg="[$(date '+%F %T')] $*"
-  echo "$msg" >&2
-  if ensure_log_dir; then
-    echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
+  printf '%s\n' "$msg" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+# 判断当前脚本是否是一个真实本地文件。
+# curl | bash、bash <(curl ...) 时不能靠 $0 重新执行自己，必须走“内联后台 worker”。
+is_real_script_file() {
+  [ -n "${SCRIPT_PATH:-}" ] || return 1
+  [ -f "$SCRIPT_PATH" ] || return 1
+  [ -r "$SCRIPT_PATH" ] || return 1
+  case "$SCRIPT_PATH" in
+    /dev/fd/*|/proc/*/fd/*) return 1 ;;
+  esac
+  case "$(basename "$SCRIPT_PATH" 2>/dev/null || true)" in
+    bash|sh|dash|zsh|busybox) return 1 ;;
+  esac
+  return 0
+}
+
+has_systemd() {
+  command -v systemctl >/dev/null 2>&1
+}
+
+service_installed() {
+  [ -f "$UNIT_PATH" ]
+}
+
+service_is_active() {
+  has_systemd && service_installed && systemctl is-active --quiet "$UNIT_NAME"
+}
+
+service_is_enabled() {
+  has_systemd && service_installed && systemctl is-enabled --quiet "$UNIT_NAME"
+}
+
+latest_log_line() {
+  tail -n 1 "$LOG_FILE" 2>/dev/null || true
+}
+
+sync_summary() {
+  local last_ip="" last_sync="" now elapsed
+  [ -f "$IP_CACHE_FILE" ] && last_ip="$(cat "$IP_CACHE_FILE" 2>/dev/null || true)"
+  [ -f "$LAST_SYNC_FILE" ] && last_sync="$(cat "$LAST_SYNC_FILE" 2>/dev/null || true)"
+
+  if [ -n "$last_ip" ]; then
+    echo "最近成功 IP：$last_ip"
+  fi
+
+  if [[ "$last_sync" =~ ^[0-9]+$ ]]; then
+    now="$(date +%s)"
+    elapsed=$((now - last_sync))
+    echo "最近成功同步：${elapsed}s 前"
   fi
 }
 
-debug() {
-  [ "$DEBUG" = "true" ] || return 0
-  log "[DEBUG] $*"
-}
-
-detect_pkg_manager() {
-  if command -v apt-get >/dev/null 2>&1; then echo "apt"
-  elif command -v yum >/dev/null 2>&1; then echo "yum"
-  elif command -v dnf >/dev/null 2>&1; then echo "dnf"
-  elif command -v apk >/dev/null 2>&1; then echo "apk"
-  elif command -v pacman >/dev/null 2>&1; then echo "pacman"
-  elif command -v zypper >/dev/null 2>&1; then echo "zypper"
-  else echo "unknown"; fi
-}
-
-install_package() {
-  local pkg="$1" mgr
-  mgr="$(detect_pkg_manager)"
-  log "[依赖] 安装 $pkg ($mgr)"
-  case "$mgr" in
-    apt)
-      apt-get update -qq >/dev/null 2>&1 && \
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$pkg" >/dev/null 2>&1
-      ;;
-    yum) yum install -y -q "$pkg" >/dev/null 2>&1 ;;
-    dnf) dnf install -y -q "$pkg" >/dev/null 2>&1 ;;
-    apk) apk add --no-cache "$pkg" >/dev/null 2>&1 ;;
-    pacman) pacman -Sy --noconfirm "$pkg" >/dev/null 2>&1 ;;
-    zypper) zypper install -y "$pkg" >/dev/null 2>&1 ;;
-    *)
-      log "❌ 未知包管理器，无法自动安装 $pkg"
-      return 1
-      ;;
-  esac
-}
-
-ensure_dependencies() {
-  local missing=() need=false cmd pkg
-  for cmd in curl jq openssl awk sed tr date od flock nohup; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-      missing+=("$cmd")
-      need=true
+need_cmds() {
+  local c missing=0
+  for c in bash curl openssl awk sed tr date od grep head; do
+    if ! command -v "$c" >/dev/null 2>&1; then
+      log "缺少命令：$c"
+      missing=1
     fi
   done
-
-  [ "$need" = false ] && return 0
-
-  log "检测到缺少依赖：${missing[*]}"
-  for cmd in "${missing[@]}"; do
-    case "$cmd" in
-      curl|jq|openssl) pkg="$cmd" ;;
-      awk) pkg="gawk" ;;
-      sed) pkg="sed" ;;
-      tr|date|od|nohup) pkg="coreutils" ;;
-      flock) pkg="util-linux" ;;
-      *) pkg="$cmd" ;;
-    esac
-    install_package "$pkg" || {
-      log "❌ 自动安装失败，请手动安装：${missing[*]}"
-      exit 1
-    }
-  done
-
-  for cmd in curl jq openssl awk sed tr date od flock nohup; do
-    command -v "$cmd" >/dev/null 2>&1 || {
-      log "❌ 依赖安装后仍缺少：$cmd"
-      exit 1
-    }
-  done
+  return "$missing"
 }
 
 is_ipv4() {
-  local ip="$1"
+  local ip="$1" IFS=. a b c d x
   [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
-  local IFS='.' part
-  read -r -a octets <<< "$ip"
-  for part in "${octets[@]}"; do
-    [[ "$part" =~ ^[0-9]{1,3}$ ]] || return 1
-    [ "$part" -ge 0 ] 2>/dev/null || return 1
-    [ "$part" -le 255 ] 2>/dev/null || return 1
+  read -r a b c d <<< "$ip"
+  for x in "$a" "$b" "$c" "$d"; do
+    [[ "$x" =~ ^[0-9]+$ ]] || return 1
+    [ "$x" -ge 0 ] 2>/dev/null && [ "$x" -le 255 ] 2>/dev/null || return 1
   done
   return 0
+}
+
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
 sha256_hex() {
@@ -220,11 +171,8 @@ hmac_sha256_hex_with_hexkey() {
 
 build_authorization() {
   local action="$1" payload="$2" timestamp="$3" utc_date="$4"
-  local algorithm="TC3-HMAC-SHA256"
-  local http_method="POST"
-  local canonical_uri="/"
-  local canonical_query_string=""
-  local signed_headers="content-type;host;x-tc-action"
+  local algorithm="TC3-HMAC-SHA256" http_method="POST" canonical_uri="/"
+  local canonical_query_string="" signed_headers="content-type;host;x-tc-action"
   local canonical_headers payload_hash canonical_request hashed_canonical_request credential_scope string_to_sign
   local secret_date secret_service secret_signing signature
 
@@ -235,43 +183,27 @@ x-tc-action:$(printf '%s' "$action" | tr '[:upper:]' '[:lower:]')
 
   payload_hash="$(sha256_hex "$payload")"
   canonical_request="$(printf '%s\n%s\n%s\n%s\n%s\n%s' \
-    "$http_method" \
-    "$canonical_uri" \
-    "$canonical_query_string" \
-    "$canonical_headers" \
-    "$signed_headers" \
-    "$payload_hash")"
+    "$http_method" "$canonical_uri" "$canonical_query_string" "$canonical_headers" "$signed_headers" "$payload_hash")"
   hashed_canonical_request="$(sha256_hex "$canonical_request")"
   credential_scope="${utc_date}/${SERVICE}/tc3_request"
-  string_to_sign="$(printf '%s\n%s\n%s\n%s' \
-    "$algorithm" \
-    "$timestamp" \
-    "$credential_scope" \
-    "$hashed_canonical_request")"
+  string_to_sign="$(printf '%s\n%s\n%s\n%s' "$algorithm" "$timestamp" "$credential_scope" "$hashed_canonical_request")"
 
   secret_date="$(hmac_sha256_hex_with_key "TC3${SECRET_KEY}" "$utc_date")"
   secret_service="$(hmac_sha256_hex_with_hexkey "$secret_date" "$SERVICE")"
   secret_signing="$(hmac_sha256_hex_with_hexkey "$secret_service" "tc3_request")"
   signature="$(hmac_sha256_hex_with_hexkey "$secret_signing" "$string_to_sign")"
 
-  debug "Action=$action"
-  debug "Payload=$payload"
-  debug "CanonicalRequest=$canonical_request"
-  debug "StringToSign=$string_to_sign"
-  debug "Signature=$signature"
-
   printf '%s' "${algorithm} Credential=${SECRET_ID}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}"
 }
 
 tc_api() {
-  local action="$1" payload="$2"
-  local timestamp utc_date authorization response
-
+  local action="$1" payload="$2" timestamp utc_date authorization response errmsg
   timestamp="$(date +%s)"
   utc_date="$(date -u +%F)"
   authorization="$(build_authorization "$action" "$payload" "$timestamp" "$utc_date")"
 
-  response="$(curl -fsS --connect-timeout 10 --max-time 30 \
+  response="$(curl -fsS \
+    --connect-timeout "$API_CONNECT_TIMEOUT" --max-time "$API_MAX_TIME" \
     -X POST "https://${HOST}/" \
     -H "Authorization: ${authorization}" \
     -H "Content-Type: ${CONTENT_TYPE}" \
@@ -279,42 +211,32 @@ tc_api() {
     -H "X-TC-Action: ${action}" \
     -H "X-TC-Timestamp: ${timestamp}" \
     -H "X-TC-Version: ${VERSION}" \
-    -d "$payload")" || {
-      log "❌ 调用腾讯云 API 失败：${action}"
+    -d "$payload" 2>/dev/null)" || {
+      log "API 请求失败：${action}"
       return 1
     }
 
-  debug "Response(${action})=$response"
-
-  if ! printf '%s' "$response" | jq -e '.' >/dev/null 2>&1; then
-    log "❌ 腾讯云 API 返回不是合法 JSON：${action}"
-    return 1
-  fi
-
-  if printf '%s' "$response" | jq -e '.Response.Error' >/dev/null 2>&1; then
-    log "❌ 腾讯云 API 报错：${action}"
-    log "   Code: $(printf '%s' "$response" | jq -r '.Response.Error.Code')"
-    log "   Message: $(printf '%s' "$response" | jq -r '.Response.Error.Message')"
-    log "   RequestId: $(printf '%s' "$response" | jq -r '.Response.RequestId // ""')"
+  if printf '%s' "$response" | grep -q '"Error"'; then
+    errmsg="$(printf '%s' "$response" | sed -n 's/.*"Message":"\([^"]*\)".*/\1/p' | head -n 1)"
+    log "API 返回错误：${action}${errmsg:+ | $errmsg}"
     return 1
   fi
 
   printf '%s' "$response"
 }
 
-get_aws_metadata_public_ipv4() {
-  local token="" ip=""
-
-  token="$(curl -fsS --connect-timeout 2 --max-time 3 -X PUT \
-    "http://169.254.169.254/latest/api/token" \
+get_aws_public_ipv4() {
+  local token ip
+  token="$(curl -fsS --connect-timeout "$IMDS_CONNECT_TIMEOUT" --max-time "$IMDS_MAX_TIME" \
+    -X PUT "http://169.254.169.254/latest/api/token" \
     -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null || true)"
 
   if [ -n "$token" ]; then
-    ip="$(curl -fsS --connect-timeout 2 --max-time 3 \
+    ip="$(curl -fsS --connect-timeout "$IMDS_CONNECT_TIMEOUT" --max-time "$IMDS_MAX_TIME" \
       -H "X-aws-ec2-metadata-token: ${token}" \
       "http://169.254.169.254/latest/meta-data/public-ipv4" 2>/dev/null || true)"
   else
-    ip="$(curl -fsS --connect-timeout 2 --max-time 3 \
+    ip="$(curl -fsS --connect-timeout "$IMDS_CONNECT_TIMEOUT" --max-time "$IMDS_MAX_TIME" \
       "http://169.254.169.254/latest/meta-data/public-ipv4" 2>/dev/null || true)"
   fi
 
@@ -325,21 +247,9 @@ get_aws_metadata_public_ipv4() {
   return 1
 }
 
-get_ip_from_ipip() {
-  local raw ip
-  raw="$(curl -fsS --connect-timeout 5 --max-time 10 "https://myip.ipip.net" 2>/dev/null || true)"
-  ip="$(printf '%s' "$raw" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1)"
-
-  if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
-    printf '%s' "$ip"
-    return 0
-  fi
-  return 1
-}
-
-get_ip_from_ipify() {
+get_public_ip_fallback() {
   local ip
-  ip="$(curl -fsS --connect-timeout 5 --max-time 10 "https://api.ipify.org" 2>/dev/null || true)"
+  ip="$(curl -fsS --connect-timeout 1 --max-time 2 "https://api.ipify.org" 2>/dev/null || true)"
   if [ -n "$ip" ] && is_ipv4 "$ip" && [[ ! "$ip" =~ ^127\. ]]; then
     printf '%s' "$ip"
     return 0
@@ -347,683 +257,372 @@ get_ip_from_ipify() {
   return 1
 }
 
-get_local_ipv4() {
-  local ip=""
-  IP_SOURCE=""
-
-  if ip="$(get_aws_metadata_public_ipv4)"; then
-    IP_SOURCE="AWS Metadata public-ipv4"
-    printf '%s' "$ip"
-    return 0
-  fi
-
-  if ip="$(get_ip_from_ipip)"; then
-    IP_SOURCE="ipip.net"
-    printf '%s' "$ip"
-    return 0
-  fi
-
-  if ip="$(get_ip_from_ipify)"; then
-    IP_SOURCE="api.ipify.org"
-    printf '%s' "$ip"
-    return 0
-  fi
-
-  log "❌ 无法获取有效公网 IPv4（已尝试 AWS Metadata、ipip.net、ipify）"
-  return 1
+get_public_ipv4() {
+  get_aws_public_ipv4 || get_public_ip_fallback
 }
 
-get_target_record() {
-  local sub_domain="$1" wanted_line="$2" wanted_remark="$3"
-  local payload response
-  payload="$(jq -cn \
-    --arg domain "$DOMAIN" \
-    --arg sub "$sub_domain" \
-    --arg type "$RECORD_TYPE" \
-    --arg line "$wanted_line" \
-    '{Domain:$domain,Subdomain:$sub,RecordType:$type,RecordLine:$line,Limit:3000,Offset:0,ErrorOnEmpty:"no"}')"
+extract_record_id_by_remark() {
+  local remark="$1"
+  awk -v remark="$remark" '
+    BEGIN { RS="[{}]" }
+    index($0, "\"Remark\":\"" remark "\"") {
+      if (match($0, /\"RecordId\":[0-9]+/)) {
+        s=substr($0, RSTART, RLENGTH); sub(/.*:/, "", s); print s; exit
+      }
+    }
+  ' | head -n 1
+}
 
+extract_first_record_id() {
+  grep -o '"RecordId":[0-9]*' | head -n 1 | sed 's/[^0-9]//g'
+}
+
+describe_record_id() {
+  local sub="$1" line="$2" remark="$3" payload response rid
+  payload="{\"Domain\":\"$(json_escape "$DOMAIN")\",\"Subdomain\":\"$(json_escape "$sub")\",\"RecordType\":\"$(json_escape "$RECORD_TYPE")\",\"RecordLine\":\"$(json_escape "$line")\",\"Limit\":20,\"Offset\":0,\"ErrorOnEmpty\":\"no\"}"
   response="$(tc_api "DescribeRecordList" "$payload")" || return 1
-
-  printf '%s' "$response" | jq -c --arg remark "$wanted_remark" '
-    (.Response.RecordList // []) as $list |
-    ($list | map(select(.Remark == $remark))[0]) // ($list[0]) // empty
-  '
+  rid="$(printf '%s' "$response" | extract_record_id_by_remark "$remark")"
+  [ -n "$rid" ] || rid="$(printf '%s' "$response" | extract_first_record_id)"
+  [ -n "$rid" ] || return 1
+  printf '%s' "$rid"
 }
 
 create_record() {
-  local sub_domain="$1" full_domain="$2" wanted_line="$3" wanted_remark="$4" ip="$5" payload response record_id
-  payload="$(jq -cn \
-    --arg domain "$DOMAIN" \
-    --arg sub "$sub_domain" \
-    --arg type "$RECORD_TYPE" \
-    --arg line "$wanted_line" \
-    --arg value "$ip" \
-    --arg remark "$wanted_remark" \
-    '{Domain:$domain,SubDomain:$sub,RecordType:$type,RecordLine:$line,Value:$value,Remark:$remark,Status:"ENABLE"}')"
-
+  local sub="$1" full="$2" line="$3" remark="$4" ip="$5" payload response rid
+  payload="{\"Domain\":\"$(json_escape "$DOMAIN")\",\"SubDomain\":\"$(json_escape "$sub")\",\"RecordType\":\"$(json_escape "$RECORD_TYPE")\",\"RecordLine\":\"$(json_escape "$line")\",\"Value\":\"$(json_escape "$ip")\",\"Remark\":\"$(json_escape "$remark")\",\"Status\":\"ENABLE\"}"
   response="$(tc_api "CreateRecord" "$payload")" || return 1
-  record_id="$(printf '%s' "$response" | jq -r '.Response.RecordId')"
-  log "✅ 腾讯云已创建记录：${full_domain} [${wanted_line}] -> ${ip} (RecordId=${record_id})"
+  rid="$(printf '%s' "$response" | grep -o '"RecordId":[0-9]*' | head -n 1 | sed 's/[^0-9]//g')"
+  log "已创建记录：${full} [${line}] -> ${ip}${rid:+ | RecordId=${rid}}"
 }
 
 modify_dynamic_dns() {
-  local sub_domain="$1" full_domain="$2" wanted_line="$3" record_id="$4" ip="$5" payload
-  payload="$(jq -cn \
-    --arg domain "$DOMAIN" \
-    --arg sub "$sub_domain" \
-    --arg line "$wanted_line" \
-    --arg value "$ip" \
-    --argjson record_id "$record_id" \
-    '{Domain:$domain,SubDomain:$sub,RecordId:$record_id,RecordLine:$line,Value:$value}')"
-
+  local sub="$1" full="$2" line="$3" rid="$4" ip="$5" payload
+  payload="{\"Domain\":\"$(json_escape "$DOMAIN")\",\"SubDomain\":\"$(json_escape "$sub")\",\"RecordId\":${rid},\"RecordLine\":\"$(json_escape "$line")\",\"Value\":\"$(json_escape "$ip")\"}"
   tc_api "ModifyDynamicDNS" "$payload" >/dev/null || return 1
-  log "✅ 腾讯云 DDNS 更新成功：${full_domain} [${wanted_line}] -> ${ip} (RecordId=${record_id})"
+  log "DDNS 更新成功：${full} [${line}] -> ${ip} | RecordId=${rid}"
 }
 
-modify_record_remark() {
-  local record_id="$1" wanted_remark="$2" payload
-  payload="$(jq -cn \
-    --arg domain "$DOMAIN" \
-    --arg remark "$wanted_remark" \
-    --argjson record_id "$record_id" \
-    '{Domain:$domain,RecordId:$record_id,Remark:$remark}')"
-
-  tc_api "ModifyRecordRemark" "$payload" >/dev/null || return 1
-  log "✅ 腾讯云已同步记录备注：${wanted_remark} (RecordId=${record_id})"
-}
-
-sync_tencent_dns_record() {
-  local sub_domain="$1" full_domain="$2" wanted_line="$3" wanted_remark="$4" current_ip="$5"
-  local record_json record_id record_value current_remark
-
-  record_json="$(get_target_record "$sub_domain" "$wanted_line" "$wanted_remark")" || return 1
-
-  if [ -z "$record_json" ] || [ "$record_json" = "null" ]; then
-    log "ℹ️ 腾讯云未找到 ${full_domain} [${wanted_line}] 的 A 记录，准备创建"
-    create_record "$sub_domain" "$full_domain" "$wanted_line" "$wanted_remark" "$current_ip" || return 1
-    return 0
+sync_one_record() {
+  local sub="$1" full="$2" line="$3" remark="$4" rid="$5" ip="$6"
+  if [ -z "$rid" ]; then
+    rid="$(describe_record_id "$sub" "$line" "$remark" || true)"
   fi
 
-  record_id="$(printf '%s' "$record_json" | jq -r '.RecordId // empty')"
-  record_value="$(printf '%s' "$record_json" | jq -r '.Value // ""')"
-  current_remark="$(printf '%s' "$record_json" | jq -r '.Remark // ""')"
-
-  [ -n "$record_id" ] || {
-    log "❌ 腾讯云现有记录缺少 RecordId：${full_domain}"
-    return 1
-  }
-
-  if [ "$record_value" != "$current_ip" ]; then
-    log "ℹ️ 腾讯云检测到 IP 变化：${full_domain} | ${record_value:-<空>} -> ${current_ip}"
-    modify_dynamic_dns "$sub_domain" "$full_domain" "$wanted_line" "$record_id" "$current_ip" || return 1
+  if [ -n "$rid" ]; then
+    modify_dynamic_dns "$sub" "$full" "$line" "$rid" "$ip"
   else
-    log "ℹ️ 腾讯云 IP 未变化：${full_domain} -> ${current_ip}，无需更新"
-  fi
-
-  if [ "$current_remark" != "$wanted_remark" ]; then
-    modify_record_remark "$record_id" "$wanted_remark" || return 1
+    create_record "$sub" "$full" "$line" "$remark" "$ip"
   fi
 }
 
-sync_tencent_dns() {
-  local current_ip="$1"
-  sync_tencent_dns_record "$SUB_DOMAIN" "$FULL_DOMAIN" "$RECORD_LINE" "$RECORD_REMARK" "$current_ip" || return 1
-  sync_tencent_dns_record "$SUB_DOMAIN_2" "$FULL_DOMAIN_2" "$RECORD_LINE_2" "$RECORD_REMARK_2" "$current_ip" || return 1
-}
+should_skip_update() {
+  local current_ip="$1" last_ip="" last_sync="" now elapsed
+  [ -f "$IP_CACHE_FILE" ] && last_ip="$(cat "$IP_CACHE_FILE" 2>/dev/null || true)"
+  [ -f "$LAST_SYNC_FILE" ] && last_sync="$(cat "$LAST_SYNC_FILE" 2>/dev/null || true)"
 
-validate_config() {
-  local missing=() v
-  for v in SECRET_ID SECRET_KEY DOMAIN SUB_DOMAIN RECORD_TYPE RECORD_LINE RECORD_REMARK SUB_DOMAIN_2 RECORD_LINE_2 RECORD_REMARK_2; do
-    if [ -z "${!v:-}" ]; then
-      missing+=("$v")
-    fi
-  done
-
-  if [ "${#missing[@]}" -gt 0 ]; then
-    log "❌ 配置缺失：${missing[*]}"
+  if [ "$current_ip" != "$last_ip" ]; then
     return 1
   fi
 
-  if [[ "${SECRET_ID}" == REPLACE_WITH_* ]] || [[ "${SECRET_KEY}" == REPLACE_WITH_* ]]; then
-    log "❌ 请先把 SECRET_ID / SECRET_KEY 改成你自己的腾讯云密钥"
+  if [[ ! "$last_sync" =~ ^[0-9]+$ ]]; then
     return 1
   fi
-}
 
-do_ddns_once() {
-  local current_ip
-
-  log "=========================================="
-  log "开始执行 DDNS 同步"
-  log "腾讯云目标1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
-  log "腾讯云目标2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
-
-  validate_config || return 1
-
-  current_ip="$(get_local_ipv4)" || return 1
-  log "当前公网 IPv4: ${current_ip} | 来源: ${IP_SOURCE:-unknown}"
-
-  sync_tencent_dns "$current_ip" || return 1
-
-  log "DDNS 同步完成"
-}
-
-pid_is_running() {
-  local pid="${1:-}"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "$pid" 2>/dev/null
-}
-
-pid_matches_daemon() {
-  local pid="${1:-}" cmdline=""
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  [ -r "/proc/${pid}/cmdline" ] || return 1
-  cmdline="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
-  case "$cmdline" in
-    *"${DAEMON_MARK}"*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-list_matching_daemon_pids() {
-  local proc pid
-  for proc in /proc/[0-9]*; do
-    [ -r "$proc/cmdline" ] || continue
-    pid="${proc##*/}"
-    [ "$pid" = "$$" ] && continue
-    if pid_is_running "$pid" && pid_matches_daemon "$pid"; then
-      echo "$pid"
-    fi
-  done | awk '!seen[$0]++'
-}
-
-collect_existing_pids() {
-  {
-    if [ -f "$PID_FILE" ]; then
-      local pid_from_file
-      pid_from_file="$(cat "$PID_FILE" 2>/dev/null || true)"
-      if pid_is_running "$pid_from_file" && pid_matches_daemon "$pid_from_file" && [ "$pid_from_file" != "$$" ]; then
-        echo "$pid_from_file"
-      fi
-    fi
-    list_matching_daemon_pids
-  } | awk '!seen[$0]++'
-}
-
-count_existing_pids() {
-  collect_existing_pids | awk 'NF {count++} END {print count+0}'
-}
-
-refresh_pid_file() {
-  local pid any_pid
-  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-  if pid_is_running "$pid" && pid_matches_daemon "$pid"; then
+  now="$(date +%s)"
+  elapsed=$((now - last_sync))
+  if [ "$elapsed" -lt "$FORCE_SYNC_INTERVAL" ]; then
+    log "IP 未变化 (${current_ip})，距离上次成功同步 ${elapsed}s，跳过更新"
     return 0
   fi
 
-  any_pid="$(collect_existing_pids | sed -n '1p')"
-  if pid_is_running "$any_pid" && pid_matches_daemon "$any_pid"; then
-    echo "$any_pid" > "$PID_FILE"
-    return 0
-  fi
-
-  rm -f "$PID_FILE" "$LOCK_FILE"
+  log "IP 未变化 (${current_ip})，但已超过强制同步间隔 ${FORCE_SYNC_INTERVAL}s，继续校正记录"
   return 1
 }
 
-wait_pid_exit() {
-  local pid="$1" waited=0 timeout="${2:-10}"
-  while pid_is_running "$pid" && [ "$waited" -lt "$timeout" ]; do
-    sleep 1
-    waited=$((waited + 1))
-  done
-  ! pid_is_running "$pid"
+mark_sync_success() {
+  local current_ip="$1" now
+  now="$(date +%s)"
+  printf '%s' "$current_ip" > "$IP_CACHE_FILE" 2>/dev/null || true
+  printf '%s' "$now" > "$LAST_SYNC_FILE" 2>/dev/null || true
 }
 
-stop_existing_daemons() {
-  local pids pid found=false
-  pids="$(collect_existing_pids)"
+do_once() {
+  local current_ip
+  need_cmds || return 1
 
-  [ -n "$pids" ] || {
-    rm -f "$PID_FILE" "$LOCK_FILE"
+  if [ -z "$SECRET_ID" ] || [ -z "$SECRET_KEY" ]; then
+    log "未配置腾讯云 SecretId/SecretKey"
+    return 1
+  fi
+
+  current_ip="$(get_public_ipv4)" || {
+    log "无法获取公网 IPv4"
+    return 1
+  }
+  log "当前公网 IPv4：${current_ip}"
+
+  if should_skip_update "$current_ip"; then
     return 0
-  }
-
-  while IFS= read -r pid; do
-    [ -n "$pid" ] || continue
-    found=true
-    if pid_is_running "$pid"; then
-      echo "停止旧进程: PID ${pid}"
-      kill "$pid" 2>/dev/null || true
-      if ! wait_pid_exit "$pid" 10; then
-        echo "强制结束旧进程: PID ${pid}"
-        kill -9 "$pid" 2>/dev/null || true
-        wait_pid_exit "$pid" 3 || true
-      fi
-    fi
-  done <<< "$pids"
-
-  rm -f "$PID_FILE" "$LOCK_FILE"
-  [ "$found" = true ] || true
-}
-
-is_service_running() {
-  refresh_pid_file
-}
-
-show_status() {
-  local pid started_at runtime memory existing_count
-  existing_count="$(count_existing_pids)"
-  echo "脚本: ${SCRIPT_PATH}"
-  echo "实例: ${INSTANCE_NAME}"
-  echo "腾讯云域名1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
-  echo "腾讯云域名2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
-  echo "间隔: ${CHECK_INTERVAL}s"
-  echo "日志: ${LOG_FILE}"
-  echo "systemd: ${SYSTEMD_SERVICE_NAME}"
-
-  if is_service_running; then
-    pid="$(cat "$PID_FILE")"
-    started_at="$(cat "$STARTED_AT_FILE" 2>/dev/null || true)"
-    echo "状态: 🟢 运行中"
-    echo "PID : ${pid}"
-    [ -n "$started_at" ] && echo "启动: ${started_at}"
-    if command -v ps >/dev/null 2>&1; then
-      runtime="$(ps -p "$pid" -o etime= 2>/dev/null | sed 's/^ *//' || true)"
-      memory="$(ps -p "$pid" -o rss= 2>/dev/null | awk '{if ($1 != "") printf "%.1fMB", $1/1024}' || true)"
-      [ -n "$runtime" ] && echo "运行: ${runtime}"
-      [ -n "$memory" ] && echo "内存: ${memory}"
-    fi
-  else
-    echo "状态: 🔴 已停止"
-    rm -f "$STARTED_AT_FILE"
   fi
 
-  if command -v systemctl >/dev/null 2>&1; then
-    if systemctl is-enabled "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1; then
-      echo "开机自启: ✅ 已启用"
-      if systemctl is-active "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1; then
-        echo "systemd状态: 🟢 active"
-      else
-        echo "systemd状态: 🔴 inactive"
-      fi
-    else
-      echo "开机自启: ❌ 未启用"
-    fi
-  fi
+  sync_one_record "$SUB_DOMAIN_1" "$FULL_DOMAIN_1" "$RECORD_LINE_1" "$RECORD_REMARK_1" "$RECORD_ID_1" "$current_ip" || return 1
+  sync_one_record "$SUB_DOMAIN_2" "$FULL_DOMAIN_2" "$RECORD_LINE_2" "$RECORD_REMARK_2" "$RECORD_ID_2" "$current_ip" || return 1
 
-  if [ "${existing_count}" -gt 1 ] 2>/dev/null; then
-    echo "告警: ⚠️ 检测到重复后台进程 (${existing_count} 个)"
-  fi
+  mark_sync_success "$current_ip"
+  log "本轮 DDNS 完成"
 }
 
-show_logs() {
-  ensure_log_dir
-  touch "$LOG_FILE" 2>/dev/null || true
-  [ -f "$LOG_FILE" ] || {
-    echo "日志不存在：${LOG_FILE}"
-    return 1
-  }
-  echo "========== 最近 80 行日志 =========="
-  tail -n 80 "$LOG_FILE"
-  echo "===================================="
-}
-
-follow_logs() {
-  ensure_log_dir
-  touch "$LOG_FILE" 2>/dev/null || true
-  [ -f "$LOG_FILE" ] || {
-    echo "日志不存在：${LOG_FILE}"
-    return 1
-  }
-  echo "按 Ctrl+C 退出实时日志"
-  tail -n 50 -F "$LOG_FILE"
-}
-
-run_once_safely() {
-  ensure_log_dir
-  ensure_dependencies
-
-  if is_service_running; then
-    echo "后台 DDNS 正在运行，为避免叠加，本次单次执行已拒绝。"
-    echo "请先停止后台服务后再执行一次性同步。"
-    return 1
-  fi
-
-  do_ddns_once
-}
-
-daemon_cleanup() {
-  rm -f "$PID_FILE" "$LOCK_FILE" "$STARTED_AT_FILE"
-}
-
-run_daemon() {
-  ensure_log_dir
-  ensure_dependencies
-
-  exec 200>"$LOCK_FILE"
-  if ! flock -n 200; then
-    log "⚠️ 已有后台进程在运行，当前进程退出，避免叠加"
+worker_once_with_retry() {
+  local i
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    log "已有 worker 在运行，本次退出"
     exit 0
   fi
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null || true; rm -f "$PID_FILE" 2>/dev/null || true' EXIT
+  echo $$ > "$PID_FILE" 2>/dev/null || true
 
-  if is_service_running; then
-    local existing_pid
-    existing_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-    if [ -n "$existing_pid" ] && [ "$existing_pid" != "$$" ] && pid_is_running "$existing_pid"; then
-      log "⚠️ 检测到已有后台进程在运行 (PID=${existing_pid})，当前进程退出，避免叠加"
+  i=1
+  while [ "$i" -le "$RETRY_TIMES" ]; do
+    log "后台同步尝试 ${i}/${RETRY_TIMES}"
+    if do_once; then
       exit 0
     fi
+    i=$((i + 1))
+    sleep "$RETRY_SLEEP"
+  done
+  log "多次重试后仍失败"
+  exit 1
+}
+
+worker_daemon() {
+  local interval="${CHECK_INTERVAL:-60}"
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    log "已有 daemon 在运行，本次退出"
+    exit 0
   fi
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null || true; rm -f "$PID_FILE" 2>/dev/null || true' EXIT
+  echo $$ > "$PID_FILE" 2>/dev/null || true
 
-  echo $$ > "$PID_FILE"
-  date '+%F %T' > "$STARTED_AT_FILE"
-  trap 'log "收到退出信号，后台 DDNS 已停止"; daemon_cleanup; exit 0' SIGTERM SIGINT SIGHUP
-  trap 'daemon_cleanup' EXIT
-
-  log "=========================================="
-  log "腾讯云香港 DDNS 单文件后台服务已启动"
-  log "实例: ${INSTANCE_NAME}"
-  log "腾讯云域名1: ${FULL_DOMAIN} | 线路: ${RECORD_LINE} | 备注: ${RECORD_REMARK}"
-  log "腾讯云域名2: ${FULL_DOMAIN_2} | 线路: ${RECORD_LINE_2} | 备注: ${RECORD_REMARK_2}"
-  log "检测间隔: ${CHECK_INTERVAL}s"
-  log "日志文件: ${LOG_FILE}"
-  log "获取 IP 方式: 公网 IPv4（优先 AWS Metadata，其次 ipip.net / ipify）"
-  log "PID: $$"
-  log "=========================================="
-
-  local round=0
+  log "DDNS daemon 启动，检查间隔 ${interval} 秒，强制同步间隔 ${FORCE_SYNC_INTERVAL} 秒"
   while true; do
-    round=$((round + 1))
-    log "---------- 第 ${round} 次检测开始 ----------"
-    do_ddns_once && log "---------- 第 ${round} 次检测完成 ----------" \
-                  || log "---------- 第 ${round} 次检测失败 ----------"
-    sleep "$CHECK_INTERVAL" &
-    wait $! 2>/dev/null || true
+    do_once || true
+    sleep "$interval"
   done
 }
 
-write_systemd_unit() {
-  cat > "${SYSTEMD_SERVICE_PATH}" <<EOF
+start_fast() {
+  # 如果已经安装了 systemd service，优先让 systemd 接管启动。
+  if has_systemd && service_installed; then
+    if service_is_active; then
+      echo "service 已在运行：$UNIT_NAME"
+      return 0
+    fi
+    systemctl start "$UNIT_NAME"
+    echo "started via systemd: $UNIT_NAME"
+    return 0
+  fi
+
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+
+  # 开机小助手最稳的方式：start 只拉起“一次性后台 worker”，立即返回。
+  # 真实 DDNS 同步由 worker 重试完成；start 本身不等腾讯云 API、不等公网 IP 查询。
+  if is_real_script_file; then
+    if command -v setsid >/dev/null 2>&1; then
+      setsid bash "$SCRIPT_PATH" worker >> "$LOG_FILE" 2>&1 < /dev/null &
+    elif command -v nohup >/dev/null 2>&1; then
+      nohup bash "$SCRIPT_PATH" worker >> "$LOG_FILE" 2>&1 < /dev/null &
+    else
+      bash "$SCRIPT_PATH" worker >> "$LOG_FILE" 2>&1 < /dev/null &
+    fi
+  else
+    # 兼容 curl | bash / bash <(curl ...)：不再报“脚本必须保存为本地文件”，
+    # 直接把当前 shell 中已加载的函数 fork 到后台执行。
+    log "start 使用内联后台 worker：当前不是普通本地脚本文件"
+    ( trap '' HUP; worker_once_with_retry ) >> "$LOG_FILE" 2>&1 < /dev/null &
+  fi
+
+  echo $! > "$PID_FILE" 2>/dev/null || true
+  echo "started"
+}
+
+install_service() {
+  local service_script="$INSTALL_PATH"
+
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "install-service 需要 root 权限，请用 sudo 运行。"
+    return 1
+  fi
+  if ! has_systemd; then
+    echo "当前系统没有 systemctl，无法安装开机自启。"
+    return 1
+  fi
+  if [ ! -f "$SCRIPT_PATH" ]; then
+    echo "脚本文件不存在：$SCRIPT_PATH"
+    return 1
+  fi
+
+  install -d -m 755 /usr/local/sbin
+  install -m 700 "$SCRIPT_PATH" "$service_script"
+  cat > "$UNIT_PATH" <<EOF
 [Unit]
-Description=DNSPod DDNS (${INSTANCE_NAME})
+Description=DNSPod DDNS for ${INSTANCE_NAME}
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env bash "${SCRIPT_PATH}" --daemon "${DAEMON_MARK}"
-ExecStop=/usr/bin/env bash "${SCRIPT_PATH}" stop
+ExecStart=/bin/bash ${service_script} daemon
 Restart=always
-RestartSec=5
-User=root
+RestartSec=10
+TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+  systemctl daemon-reload
+  systemctl enable --now "$UNIT_NAME"
+  echo "已安装并启动：$UNIT_NAME"
+  echo "脚本已固定到：$service_script"
 }
 
-install_autostart() {
+uninstall_service() {
   if [ "$(id -u)" -ne 0 ]; then
-    echo "❌ install 需要 root 权限"
+    echo "uninstall-service 需要 root 权限，请用 sudo 运行。"
+    return 1
+  fi
+  if ! has_systemd; then
+    echo "当前系统没有 systemctl，无法卸载开机自启。"
     return 1
   fi
 
-  ensure_dependencies
-  chmod +x "${SCRIPT_PATH}" 2>/dev/null || true
-  write_systemd_unit || {
-    echo "❌ 写入 systemd 服务文件失败: ${SYSTEMD_SERVICE_PATH}"
-    return 1
-  }
-
+  systemctl disable --now "$UNIT_NAME" 2>/dev/null || true
+  rm -f "$UNIT_PATH"
   systemctl daemon-reload
-  systemctl daemon-reload
-  systemctl enable --now "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1 || {
-    echo "❌ systemctl enable --now 失败"
-    return 1
-  }
-
-  if ! systemctl is-active --quiet "${SYSTEMD_SERVICE_NAME}"; then
-    echo "❌ 服务未成功启动"
-    systemctl status "${SYSTEMD_SERVICE_NAME}" --no-pager -l || true
-    return 1
-  fi
-
-  echo "✅ 已安装开机自启并立即启动"
-  echo "服务名: ${SYSTEMD_SERVICE_NAME}"
-  echo "查看状态: systemctl status ${SYSTEMD_SERVICE_NAME}"
+  echo "已卸载：$UNIT_NAME"
 }
 
-uninstall_autostart() {
-  if [ "$(id -u)" -ne 0 ]; then
-    echo "❌ uninstall 需要 root 权限"
-    return 1
+status() {
+  local pid=""
+  [ -f "$PID_FILE" ] && pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  echo "脚本：$SCRIPT_PATH"
+  echo "日志：$LOG_FILE"
+
+  if has_systemd && service_installed; then
+    echo "service：$UNIT_NAME"
+    if service_is_active; then
+      echo "service 状态：active"
+    else
+      echo "service 状态：inactive/failed"
+    fi
+    if service_is_enabled; then
+      echo "开机自启：enabled"
+    else
+      echo "开机自启：disabled"
+    fi
   fi
 
-  systemctl stop "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1 || true
-  systemctl disable "${SYSTEMD_SERVICE_NAME}" >/dev/null 2>&1 || true
-  rm -f "${SYSTEMD_SERVICE_PATH}"
-  systemctl daemon-reload
-  echo "✅ 已卸载开机自启"
-}
-
-show_menu_screen() {
-  if command -v clear >/dev/null 2>&1; then
-    clear
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    echo "进程状态：运行中，PID=$pid"
   else
-    printf '\033c'
+    echo "进程状态：未运行或已完成"
   fi
 
-  echo "╔══════════════════════════════════════════════╗"
-  echo "║     腾讯云香港 DDNS 单文件管理面板          ║"
-  echo "╠══════════════════════════════════════════════╣"
-  show_status
-  echo "╠══════════════════════════════════════════════╣"
-  echo "║  1. 启动后台 DDNS                           ║"
-  echo "║  2. 停止后台 DDNS                           ║"
-  echo "║  3. 重启后台 DDNS                           ║"
-  echo "║  4. 查看最近日志                            ║"
-  echo "║  5. 实时日志                                ║"
-  echo "║  6. 立即执行一次 DDNS                       ║"
-  echo "║  7. 安装开机自启                            ║"
-  echo "║  8. 卸载开机自启                            ║"
-  echo "║  0. 退出                                    ║"
-  echo "╚══════════════════════════════════════════════╝"
-}
+  sync_summary
 
-run_menu() {
-  ensure_dependencies
-  while true; do
-    show_menu_screen
-    read -rp "请选择 [0-8]: " choice
-    case "$choice" in
-      1) echo; start_service ;;
-      2) echo; stop_service ;;
-      3) echo; restart_service ;;
-      4) echo; show_logs ;;
-      5) echo; follow_logs ;;
-      6) echo; run_once_safely ;;
-      7) echo; install_autostart ;;
-      8) echo; uninstall_autostart ;;
-      0) echo; echo "退出管理面板"; return 0 ;;
-      *) echo; echo "无效选择，请重新输入" ;;
-    esac
-    echo
-    read -rp "按回车继续..." _unused
-  done
-}
-
-show_quick_commands() {
-  echo "快捷命令:"
-  if [ -x "$SHORTCUT_PATH" ]; then
-    echo "  ${SHORTCUT_CMD}             打开管理面板"
-    echo "  ${SHORTCUT_CMD} start       启动后台"
-    echo "  ${SHORTCUT_CMD} stop        停止后台"
-    echo "  ${SHORTCUT_CMD} restart     重启后台"
-    echo "  ${SHORTCUT_CMD} status      查看状态"
-    echo "  ${SHORTCUT_CMD} logs        查看日志"
-    echo "  ${SHORTCUT_CMD} follow      实时日志"
-    echo "  ${SHORTCUT_CMD} once        立即执行一次 DDNS"
-    echo "  ${SHORTCUT_CMD} install     安装开机自启"
-    echo "  ${SHORTCUT_CMD} uninstall   卸载开机自启"
-  fi
-  echo "  bash ${SCRIPT_PATH} menu    打开管理面板"
-}
-
-install_shortcut_quietly() {
-  local dir tmp
-  dir="$(dirname "$SHORTCUT_PATH")"
-  [ -n "$dir" ] || return 0
-  mkdir -p "$dir" 2>/dev/null || return 0
-  [ -w "$dir" ] || return 0
-
-  tmp="${SHORTCUT_PATH}.tmp.$$"
-  cat > "$tmp" <<EOF
-#!/usr/bin/env bash
-if [ "\$#" -eq 0 ]; then
-  exec bash "${SCRIPT_PATH}" menu
-else
-  exec bash "${SCRIPT_PATH}" "\$@"
-fi
-EOF
-  chmod +x "$tmp" 2>/dev/null || true
-  mv -f "$tmp" "$SHORTCUT_PATH" 2>/dev/null || rm -f "$tmp"
-}
-
-start_service() {
-  ensure_log_dir
-  ensure_dependencies
-  install_shortcut_quietly
-
-  local existing_pids existing_count
-  existing_pids="$(collect_existing_pids)"
-  existing_count="$(printf '%s\n' "$existing_pids" | awk 'NF {count++} END {print count+0}')"
-
-  if [ "$existing_count" -gt 1 ] 2>/dev/null; then
-    echo "检测到重复后台进程，先清理后再启动..."
-    stop_existing_daemons
-    sleep 1
-  elif is_service_running; then
-    touch "$LOG_FILE" 2>/dev/null || true
-    echo "✅ 后台 DDNS 已在运行"
-    echo "PID : $(cat "$PID_FILE")"
-    echo "日志: ${LOG_FILE}"
-    show_quick_commands
-    return 0
-  elif [ -n "$existing_pids" ]; then
-    echo "检测到残留旧进程，先清理..."
-    stop_existing_daemons
-    sleep 1
-  fi
-
-  touch "$LOG_FILE" 2>/dev/null || true
-  echo "启动后台 DDNS 中..."
-  nohup bash "$SCRIPT_PATH" --daemon "$DAEMON_MARK" >/dev/null 2>&1 &
-  sleep 2
-
-  if is_service_running; then
-    touch "$LOG_FILE" 2>/dev/null || true
-    echo "✅ 启动成功"
-    echo "PID : $(cat "$PID_FILE")"
-    echo "日志: ${LOG_FILE}"
-    show_quick_commands
-  else
-    echo "❌ 启动失败，请检查日志：${LOG_FILE}"
-    return 1
+  local last_line=""
+  last_line="$(latest_log_line)"
+  if [ -n "$last_line" ]; then
+    echo "最近日志：$last_line"
   fi
 }
 
-stop_service() {
-  local pids
-  pids="$(collect_existing_pids)"
-
-  if [ -z "$pids" ]; then
-    echo "当前没有后台 DDNS 进程"
-    rm -f "$PID_FILE" "$LOCK_FILE" "$STARTED_AT_FILE"
+stop() {
+  local pid=""
+  if has_systemd && service_installed; then
+    systemctl stop "$UNIT_NAME"
+    echo "stopped via systemd: $UNIT_NAME"
     return 0
   fi
 
-  echo "停止后台 DDNS 中..."
-  stop_existing_daemons
-  rm -f "$STARTED_AT_FILE"
-  echo "✅ 已停止"
+  [ -f "$PID_FILE" ] && pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    echo "stopped"
+  else
+    echo "not running"
+  fi
+  rm -f "$PID_FILE"
+  rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
 restart_service() {
-  stop_service
-  sleep 1
-  start_service
+  if has_systemd && service_installed; then
+    systemctl restart "$UNIT_NAME"
+    echo "restarted via systemd: $UNIT_NAME"
+    return 0
+  fi
+
+  stop
+  start_fast
 }
 
-usage() {
-  cat <<USAGE
+
+diag() {
+  echo "脚本路径：${SCRIPT_PATH}"
+  echo "日志路径：${LOG_FILE}"
+  if is_real_script_file; then
+    echo "运行方式：本地文件"
+  else
+    echo "运行方式：管道/进程替换/非普通文件；start 会使用内联后台 worker"
+  fi
+  echo
+  echo "依赖检查："
+  if need_cmds; then
+    echo "  OK：基础命令齐全"
+  else
+    echo "  FAIL：基础命令缺失，请看日志 ${LOG_FILE}"
+  fi
+  echo
+  echo "公网 IP 检查："
+  local ip=""
+  if ip="$(get_public_ipv4)"; then
+    echo "  OK：${ip}"
+  else
+    echo "  FAIL：无法获取公网 IPv4"
+  fi
+  echo
+  echo "最近日志："
+  tail -n 20 "$LOG_FILE" 2>/dev/null || true
+}
+
+case "${1:-start}" in
+  start) start_fast ;;
+  worker|--worker) worker_once_with_retry ;;
+  daemon|--daemon) worker_daemon ;;
+  once|--once) do_once ;;
+  status) status ;;
+  stop) stop ;;
+  restart) restart_service ;;
+  install-service) install_service ;;
+  uninstall-service) uninstall_service ;;
+  logs|log) tail -n 80 "$LOG_FILE" 2>/dev/null || true ;;
+  diag|doctor) diag ;;
+  follow) tail -n 50 -F "$LOG_FILE" ;;
+  *)
+    cat <<USAGE
 用法：
-  bash ${SCRIPT_NAME}             直接启动后台 DDNS
-  bash ${SCRIPT_NAME} start       启动后台 DDNS
-  bash ${SCRIPT_NAME} stop        停止后台 DDNS
-  bash ${SCRIPT_NAME} restart     重启后台 DDNS
-  bash ${SCRIPT_NAME} status      查看状态
-  bash ${SCRIPT_NAME} logs        查看最近日志
-  bash ${SCRIPT_NAME} follow      实时查看日志
-  bash ${SCRIPT_NAME} once        立即执行一次 DDNS
-  bash ${SCRIPT_NAME} menu        打开管理面板
-  bash ${SCRIPT_NAME} install     安装开机自启
-  bash ${SCRIPT_NAME} uninstall   卸载开机自启
-
-快捷方式：
-  ${SHORTCUT_CMD}                打开管理面板
-  ${SHORTCUT_CMD} start|stop|restart|status
-  ${SHORTCUT_CMD} logs|follow|once|install|uninstall
+  $0 start      # 极速启动后台 daemon，立即返回，适合开机小助手
+  $0 once       # 前台执行一次 DDNS
+  $0 daemon     # 前台常驻循环，CHECK_INTERVAL 默认 60s
+  $0 status     # 查看 service、进程、最近同步和最近日志
+  $0 logs       # 查看日志
+  $0 diag       # 快速诊断运行方式、依赖和公网 IP
+  $0 stop       # 停止 service 或后台 daemon
+  $0 restart    # 重启 service 或后台 daemon
+  $0 install-service    # 安装并启用 systemd 开机自启
+  $0 uninstall-service  # 卸载 systemd 开机自启
 USAGE
-}
-
-main() {
-  ensure_log_dir
-  install_shortcut_quietly
-
-  case "${1:-}" in
-    --daemon)
-      run_daemon
-      ;;
-    --once|once)
-      run_once_safely
-      ;;
-    start)
-      start_service
-      ;;
-    stop)
-      stop_service
-      ;;
-    restart)
-      restart_service
-      ;;
-    status)
-      show_status
-      ;;
-    logs|log)
-      show_logs
-      ;;
-    follow)
-      follow_logs
-      ;;
-    menu|panel|ui)
-      run_menu
-      ;;
-    install|enable)
-      install_autostart
-      ;;
-    uninstall|disable)
-      uninstall_autostart
-      ;;
-    "")
-      start_service
-      ;;
-    *)
-      usage
-      exit 1
-      ;;
-  esac
-}
-
-main "$@"
+    exit 1
+    ;;
+esac
