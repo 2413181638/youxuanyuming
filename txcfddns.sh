@@ -2,9 +2,9 @@
 # 腾讯云 DNSPod 香港 DDNS - AWS 开机小助手极速版
 # 特点：
 # 1) 密钥已内置到文件，适合无环境变量的开机小助手。
-# 2) start 模式只拉起后台 worker 后立即返回，不等待腾讯云 API。
+# 2) start 模式可快速返回，适合首次手工拉起或兼容旧调用。
 # 3) 不使用 jq，不自动 apt/yum 安装依赖，避免开机阶段卡住。
-# 4) 推荐把本文件固定安装到 /usr/local/sbin，开机小助手只执行本地命令，不要每次下载完整脚本。
+# 4) install-service 会把脚本固定安装到 /usr/local/sbin，并交给 systemd 托管。
 
 set -u
 set -o pipefail
@@ -36,6 +36,16 @@ RECORD_ID_2=""
 RETRY_TIMES=12
 RETRY_SLEEP=5
 
+# daemon 模式轮询间隔
+CHECK_INTERVAL=60
+
+# 为减少重复 API 调用，记录最近一次成功同步的 IP。
+# 但只靠缓存会漏掉“记录被手工改坏/删除”的情况，所以每隔 FORCE_SYNC_INTERVAL
+# 仍会强制同步一次。
+IP_CACHE_FILE="/tmp/txcfddns-${INSTANCE_NAME}-lastip.txt"
+LAST_SYNC_FILE="/tmp/txcfddns-${INSTANCE_NAME}-lastsync.txt"
+FORCE_SYNC_INTERVAL=3600
+
 # API 超时：start 不受这些影响，只有 worker/once 会使用。
 IMDS_CONNECT_TIMEOUT="0.2"
 IMDS_MAX_TIME="1.0"
@@ -53,12 +63,51 @@ LOG_DIR="/var/log/txcfddns-${INSTANCE_NAME}"
 LOG_FILE="${LOG_DIR}/txcfddns-fast.log"
 PID_FILE="/tmp/txcfddns-${INSTANCE_NAME}-fast.pid"
 LOCK_DIR="/tmp/txcfddns-${INSTANCE_NAME}-fast.lockdir"
+INSTALL_PATH="/usr/local/sbin/txcfddns-${INSTANCE_NAME}-fast.sh"
+UNIT_NAME="txcfddns-${INSTANCE_NAME}.service"
+UNIT_PATH="/etc/systemd/system/${UNIT_NAME}"
 
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 log() {
   local msg="[$(date '+%F %T')] $*"
   printf '%s\n' "$msg" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+has_systemd() {
+  command -v systemctl >/dev/null 2>&1
+}
+
+service_installed() {
+  [ -f "$UNIT_PATH" ]
+}
+
+service_is_active() {
+  has_systemd && service_installed && systemctl is-active --quiet "$UNIT_NAME"
+}
+
+service_is_enabled() {
+  has_systemd && service_installed && systemctl is-enabled --quiet "$UNIT_NAME"
+}
+
+latest_log_line() {
+  tail -n 1 "$LOG_FILE" 2>/dev/null || true
+}
+
+sync_summary() {
+  local last_ip="" last_sync="" now elapsed
+  [ -f "$IP_CACHE_FILE" ] && last_ip="$(cat "$IP_CACHE_FILE" 2>/dev/null || true)"
+  [ -f "$LAST_SYNC_FILE" ] && last_sync="$(cat "$LAST_SYNC_FILE" 2>/dev/null || true)"
+
+  if [ -n "$last_ip" ]; then
+    echo "最近成功 IP：$last_ip"
+  fi
+
+  if [[ "$last_sync" =~ ^[0-9]+$ ]]; then
+    now="$(date +%s)"
+    elapsed=$((now - last_sync))
+    echo "最近成功同步：${elapsed}s 前"
+  fi
 }
 
 need_cmds() {
@@ -247,6 +296,37 @@ sync_one_record() {
   fi
 }
 
+should_skip_update() {
+  local current_ip="$1" last_ip="" last_sync="" now elapsed
+  [ -f "$IP_CACHE_FILE" ] && last_ip="$(cat "$IP_CACHE_FILE" 2>/dev/null || true)"
+  [ -f "$LAST_SYNC_FILE" ] && last_sync="$(cat "$LAST_SYNC_FILE" 2>/dev/null || true)"
+
+  if [ "$current_ip" != "$last_ip" ]; then
+    return 1
+  fi
+
+  if [[ ! "$last_sync" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  now="$(date +%s)"
+  elapsed=$((now - last_sync))
+  if [ "$elapsed" -lt "$FORCE_SYNC_INTERVAL" ]; then
+    log "IP 未变化 (${current_ip})，距离上次成功同步 ${elapsed}s，跳过更新"
+    return 0
+  fi
+
+  log "IP 未变化 (${current_ip})，但已超过强制同步间隔 ${FORCE_SYNC_INTERVAL}s，继续校正记录"
+  return 1
+}
+
+mark_sync_success() {
+  local current_ip="$1" now
+  now="$(date +%s)"
+  printf '%s' "$current_ip" > "$IP_CACHE_FILE" 2>/dev/null || true
+  printf '%s' "$now" > "$LAST_SYNC_FILE" 2>/dev/null || true
+}
+
 do_once() {
   local current_ip
   need_cmds || return 1
@@ -262,8 +342,14 @@ do_once() {
   }
   log "当前公网 IPv4：${current_ip}"
 
+  if should_skip_update "$current_ip"; then
+    return 0
+  fi
+
   sync_one_record "$SUB_DOMAIN_1" "$FULL_DOMAIN_1" "$RECORD_LINE_1" "$RECORD_REMARK_1" "$RECORD_ID_1" "$current_ip" || return 1
   sync_one_record "$SUB_DOMAIN_2" "$FULL_DOMAIN_2" "$RECORD_LINE_2" "$RECORD_REMARK_2" "$RECORD_ID_2" "$current_ip" || return 1
+
+  mark_sync_success "$current_ip"
   log "本轮 DDNS 完成"
 }
 
@@ -296,6 +382,7 @@ worker_daemon() {
   trap 'rmdir "$LOCK_DIR" 2>/dev/null || true; rm -f "$PID_FILE" 2>/dev/null || true' EXIT
   echo $$ > "$PID_FILE" 2>/dev/null || true
 
+  log "DDNS daemon 启动，检查间隔 ${interval} 秒，强制同步间隔 ${FORCE_SYNC_INTERVAL} 秒"
   while true; do
     do_once || true
     sleep "$interval"
@@ -303,7 +390,18 @@ worker_daemon() {
 }
 
 start_fast() {
-  # 开机小助手用这个：只启动后台，不等待 IP/API，不 sleep 检查。
+  # 如果已经安装了 systemd service，优先让 systemd 接管启动。
+  if has_systemd && service_installed; then
+    if service_is_active; then
+      echo "service 已在运行：$UNIT_NAME"
+      return 0
+    fi
+    systemctl start "$UNIT_NAME"
+    echo "started via systemd: $UNIT_NAME"
+    return 0
+  fi
+
+  # 兼容旧场景：没有安装 service 时，仍支持快速后台拉起。
   if [ ! -f "$SCRIPT_PATH" ] || [ "$(basename "$SCRIPT_PATH")" = "bash" ] || [ "$(basename "$SCRIPT_PATH")" = "sh" ]; then
     echo "无法后台启动：脚本必须保存为本地文件，不能用 curl | bash 管道运行。"
     return 1
@@ -311,12 +409,69 @@ start_fast() {
 
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   if command -v setsid >/dev/null 2>&1; then
-    setsid bash "$SCRIPT_PATH" worker >> "$LOG_FILE" 2>&1 < /dev/null &
+    setsid bash "$SCRIPT_PATH" daemon >> "$LOG_FILE" 2>&1 < /dev/null &
   else
-    nohup bash "$SCRIPT_PATH" worker >> "$LOG_FILE" 2>&1 < /dev/null &
+    nohup bash "$SCRIPT_PATH" daemon >> "$LOG_FILE" 2>&1 < /dev/null &
   fi
   echo $! > "$PID_FILE" 2>/dev/null || true
   echo "started"
+}
+
+install_service() {
+  local service_script="$INSTALL_PATH"
+
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "install-service 需要 root 权限，请用 sudo 运行。"
+    return 1
+  fi
+  if ! has_systemd; then
+    echo "当前系统没有 systemctl，无法安装开机自启。"
+    return 1
+  fi
+  if [ ! -f "$SCRIPT_PATH" ]; then
+    echo "脚本文件不存在：$SCRIPT_PATH"
+    return 1
+  fi
+
+  install -d -m 755 /usr/local/sbin
+  install -m 700 "$SCRIPT_PATH" "$service_script"
+  cat > "$UNIT_PATH" <<EOF
+[Unit]
+Description=DNSPod DDNS for ${INSTANCE_NAME}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash ${service_script} daemon
+Restart=always
+RestartSec=10
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now "$UNIT_NAME"
+  echo "已安装并启动：$UNIT_NAME"
+  echo "脚本已固定到：$service_script"
+}
+
+uninstall_service() {
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "uninstall-service 需要 root 权限，请用 sudo 运行。"
+    return 1
+  fi
+  if ! has_systemd; then
+    echo "当前系统没有 systemctl，无法卸载开机自启。"
+    return 1
+  fi
+
+  systemctl disable --now "$UNIT_NAME" 2>/dev/null || true
+  rm -f "$UNIT_PATH"
+  systemctl daemon-reload
+  echo "已卸载：$UNIT_NAME"
 }
 
 status() {
@@ -324,15 +479,44 @@ status() {
   [ -f "$PID_FILE" ] && pid="$(cat "$PID_FILE" 2>/dev/null || true)"
   echo "脚本：$SCRIPT_PATH"
   echo "日志：$LOG_FILE"
+
+  if has_systemd && service_installed; then
+    echo "service：$UNIT_NAME"
+    if service_is_active; then
+      echo "service 状态：active"
+    else
+      echo "service 状态：inactive/failed"
+    fi
+    if service_is_enabled; then
+      echo "开机自启：enabled"
+    else
+      echo "开机自启：disabled"
+    fi
+  fi
+
   if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-    echo "状态：运行中，PID=$pid"
+    echo "进程状态：运行中，PID=$pid"
   else
-    echo "状态：未运行或已完成"
+    echo "进程状态：未运行或已完成"
+  fi
+
+  sync_summary
+
+  local last_line=""
+  last_line="$(latest_log_line)"
+  if [ -n "$last_line" ]; then
+    echo "最近日志：$last_line"
   fi
 }
 
 stop() {
   local pid=""
+  if has_systemd && service_installed; then
+    systemctl stop "$UNIT_NAME"
+    echo "stopped via systemd: $UNIT_NAME"
+    return 0
+  fi
+
   [ -f "$PID_FILE" ] && pid="$(cat "$PID_FILE" 2>/dev/null || true)"
   if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null || true
@@ -344,6 +528,17 @@ stop() {
   rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
+restart_service() {
+  if has_systemd && service_installed; then
+    systemctl restart "$UNIT_NAME"
+    echo "restarted via systemd: $UNIT_NAME"
+    return 0
+  fi
+
+  stop
+  start_fast
+}
+
 case "${1:-start}" in
   start) start_fast ;;
   worker|--worker) worker_once_with_retry ;;
@@ -351,17 +546,23 @@ case "${1:-start}" in
   once|--once) do_once ;;
   status) status ;;
   stop) stop ;;
+  restart) restart_service ;;
+  install-service) install_service ;;
+  uninstall-service) uninstall_service ;;
   logs|log) tail -n 80 "$LOG_FILE" 2>/dev/null || true ;;
   follow) tail -n 50 -F "$LOG_FILE" ;;
   *)
     cat <<USAGE
 用法：
-  $0 start      # 极速启动后台 worker，立即返回，适合开机小助手
+  $0 start      # 极速启动后台 daemon，立即返回，适合开机小助手
   $0 once       # 前台执行一次 DDNS
   $0 daemon     # 前台常驻循环，CHECK_INTERVAL 默认 60s
-  $0 status     # 查看状态
+  $0 status     # 查看 service、进程、最近同步和最近日志
   $0 logs       # 查看日志
-  $0 stop       # 停止后台 worker/daemon
+  $0 stop       # 停止 service 或后台 daemon
+  $0 restart    # 重启 service 或后台 daemon
+  $0 install-service    # 安装并启用 systemd 开机自启
+  $0 uninstall-service  # 卸载 systemd 开机自启
 USAGE
     exit 1
     ;;
