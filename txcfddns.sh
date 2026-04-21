@@ -16,7 +16,7 @@ umask 077
 SECRET_ID="AKIDW6SZR5ZqsfEajfR1NXTChy1rUu64nMwQ"
 SECRET_KEY="VN8h2CAxYu1sUr0xlIciaFguvxpUxFNL"
 
-INSTANCE_NAME="awshk"
+INSTANCE_NAME="awshk1"
 DOMAIN="woainiliz.com"
 RECORD_TYPE="A"
 
