@@ -19,8 +19,8 @@ set -u
 set -o pipefail
 
 # ========== 用户配置区 ==========
-SECRET_ID="AKIDW6SZR5ZqsfEajfR1NXTChy1rUu64nMwQ"
-SECRET_KEY="VN8h2CAxYu1sUr0xlIciaFguvxpUxFNL"
+SECRET_ID="AKIDYxFQSXSDpHcpsmmhQyOfnohXQJ0nfSN7"
+SECRET_KEY="vkRxJWYbW7hBa3So482EVo4IYlqpdIm6"
 
 # 已不再使用外部 IP 查询，但保留原值，避免误删。
 AWS_SB_SGT="4d48e86004924a0b9ce4a6c99816cee7"
