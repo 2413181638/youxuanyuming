@@ -34,8 +34,8 @@ umask 077
 
 # ================== 用户配置区：主要改这里 ==================
 
-SECRET_ID="AKIDW6SZR5ZqsfEajfR1NXTChy1rUu64nMwQ"
-SECRET_KEY="VN8h2CAxYu1sUr0xlIciaFguvxpUxFNL"
+SECRET_ID="AKIDYxFQSXSDpHcpsmmhQyOfnohXQJ0nfSN7"
+SECRET_KEY="vkRxJWYbW7hBa3So482EVo4IYlqpdIm6"
 
 DOMAIN="woainiliz.com"
 SUB_DOMAIN="awshk1"
