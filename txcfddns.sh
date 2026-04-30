@@ -45,8 +45,8 @@ RECORD_TYPE="A"
 RECORD_LINE="默认"
 RECORD_REMARK="awshk1"
 
-# DNSPod TTL 单位是秒。3600 秒 = 60 分钟
-TTL=3600
+# DNSPod TTL 单位是秒。 = 60 s
+TTL=60
 
 # 后台守护模式下，每隔多少秒执行一次 DDNS
 CHECK_INTERVAL=60
