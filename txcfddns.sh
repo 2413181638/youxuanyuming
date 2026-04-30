@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
 # ==========================================================
-# Tencent Cloud DNSPod DDNS - awshk1 专用版
+# Tencent Cloud DNSPod DDNS - txcfddns.sh
 #
-# 只管理：
-#   awshk1.woainiliz.com
+# 首次部署：
+#   bash txcfddns.sh install
 #
-# 配置：
-#   类型：A
-#   线路：默认
-#   备注：awshk1
-#   TTL：3600 秒 / 60 分钟
+# 后续打开面板：
+#   txcfddns
 #
-# 特点：
-#   1. 密钥和参数全部放在脚本最前面
-#   2. 不缓存 IP
-#   3. 不缓存 RecordId
-#   4. 每次都实时查询 DNSPod 记录
-#   5. 支持菜单面板
-#   6. 支持 systemd 后台守护
-#   7. 支持开机自启
-#   8. 支持 Restart=always，保证脚本不死
+# 功能：
+#   1. 只管理 awshk1.woainiliz.com
+#   2. A 记录
+#   3. 线路：默认
+#   4. 备注：awshk1
+#   5. TTL：3600 秒 / 60 分钟
+#   6. 不缓存 IP
+#   7. 不缓存 RecordId
+#   8. 每次实时查询 DNSPod 记录
+#   9. systemd 后台守护
+#   10. 开机自启
+#   11. Restart=always，异常退出后自动重启
+#   12. 后续输入 txcfddns 只打开面板，不重复安装
 # ==========================================================
 
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -57,8 +58,17 @@ RETRY_SLEEP=5
 API_CONNECT_TIMEOUT="3"
 API_MAX_TIME="10"
 
-# 实例名，用于 systemd 服务名、日志名
-INSTANCE_NAME="awshk1"
+# ================== 固定安装配置：一般不用改 ==================
+
+INSTALL_PATH="/usr/local/sbin/txcfddns.sh"
+UNIT_NAME="txcfddns.service"
+UNIT_PATH="/etc/systemd/system/${UNIT_NAME}"
+
+PANEL_CMD="txcfddns"
+PANEL_PATH="/usr/local/bin/${PANEL_CMD}"
+
+LOG_DIR="/var/log/txcfddns"
+LOG_FILE="${LOG_DIR}/txcfddns.log"
 
 # ==========================================================
 
@@ -66,16 +76,6 @@ SERVICE="dnspod"
 HOST="dnspod.tencentcloudapi.com"
 VERSION="2021-03-23"
 CONTENT_TYPE="application/json; charset=utf-8"
-
-INSTALL_PATH="/usr/local/sbin/txcfddns-${INSTANCE_NAME}.sh"
-UNIT_NAME="txcfddns-${INSTANCE_NAME}.service"
-UNIT_PATH="/etc/systemd/system/${UNIT_NAME}"
-
-PANEL_CMD="txcfddns-${INSTANCE_NAME}"
-PANEL_PATH="/usr/local/bin/${PANEL_CMD}"
-
-LOG_DIR="/var/log/txcfddns-${INSTANCE_NAME}"
-LOG_FILE="${LOG_DIR}/txcfddns.log"
 
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
@@ -91,13 +91,15 @@ print_log() {
 
 need_cmds() {
   local c missing=0
-  for c in bash curl openssl awk sed tr date od grep head tail mkdir cat id install chmod; do
+
+  for c in bash curl openssl awk sed tr date od grep head tail mkdir cat id install chmod ps; do
     if ! command -v "$c" >/dev/null 2>&1; then
       echo "缺少命令：$c"
       log "缺少命令：$c"
       missing=1
     fi
   done
+
   return "$missing"
 }
 
@@ -107,9 +109,11 @@ has_systemd() {
 
 script_path() {
   local src="${BASH_SOURCE[0]}"
+
   if command -v readlink >/dev/null 2>&1; then
     readlink -f "$src" 2>/dev/null && return 0
   fi
+
   cd "$(dirname "$src")" 2>/dev/null && printf '%s/%s\n' "$(pwd -P)" "$(basename "$src")"
 }
 
@@ -140,6 +144,7 @@ sha256_hex() {
 
 hmac_sha256_hex_with_key() {
   local key="$1" data="$2"
+
   printf '%s' "$data" \
     | openssl dgst -sha256 -mac HMAC -macopt "key:${key}" -binary \
     | od -An -vtx1 \
@@ -148,6 +153,7 @@ hmac_sha256_hex_with_key() {
 
 hmac_sha256_hex_with_hexkey() {
   local hexkey="$1" data="$2"
+
   printf '%s' "$data" \
     | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${hexkey}" -binary \
     | od -An -vtx1 \
@@ -382,7 +388,11 @@ install_service() {
   install -d -m 755 /usr/local/sbin /usr/local/bin
   install -d -m 755 "$LOG_DIR"
 
-  install -m 700 "$SCRIPT_PATH" "$INSTALL_PATH"
+  if [ "$SCRIPT_PATH" != "$INSTALL_PATH" ]; then
+    install -m 700 "$SCRIPT_PATH" "$INSTALL_PATH"
+  else
+    chmod 700 "$INSTALL_PATH"
+  fi
 
   cat > "$UNIT_PATH" <<UNIT
 [Unit]
@@ -414,14 +424,16 @@ PANEL
   chmod 755 "$PANEL_PATH"
 
   systemctl daemon-reload
-  systemctl enable --now "$UNIT_NAME"
+  systemctl enable --now "$UNIT_NAME" >/dev/null 2>&1
 
-  echo "安装完成：${UNIT_NAME}"
+  echo "安装完成 / 已修复：${UNIT_NAME}"
   echo "开机自启：已启用"
+  echo "后台运行：已启动"
   echo "崩溃重启：Restart=always"
   echo "面板命令：${PANEL_CMD}"
-  echo "查看状态：systemctl status ${UNIT_NAME} --no-pager -l"
-  echo "查看日志：tail -f ${LOG_FILE}"
+  echo
+  echo "以后直接输入下面命令打开面板："
+  echo "  ${PANEL_CMD}"
 }
 
 uninstall_service() {
@@ -445,10 +457,14 @@ uninstall_service() {
 
 start_service() {
   if has_systemd && [ -f "$UNIT_PATH" ]; then
-    systemctl start "$UNIT_NAME"
-    echo "已启动：${UNIT_NAME}"
+    if systemctl is-active --quiet "$UNIT_NAME"; then
+      echo "服务已经在运行：${UNIT_NAME}"
+    else
+      systemctl start "$UNIT_NAME"
+      echo "已启动：${UNIT_NAME}"
+    fi
   else
-    echo "服务未安装。请先执行 install。"
+    echo "服务未安装。请先执行：bash $SCRIPT_PATH install"
     return 1
   fi
 }
@@ -528,8 +544,9 @@ show_config() {
   echo "1. 不缓存 IP"
   echo "2. 不缓存 RecordId"
   echo "3. 每次执行都会实时查询 DNSPod 记录"
-  echo "4. systemd 模式下会后台守护"
-  echo "5. systemd 设置 Restart=always，脚本异常退出后会自动拉起"
+  echo "4. install 后自动开机自启并立即运行"
+  echo "5. 后续输入 txcfddns 只打开面板"
+  echo "6. systemd 设置 Restart=always，脚本异常退出后会自动拉起"
 }
 
 disable_other_ddns_services() {
@@ -654,20 +671,23 @@ menu() {
 usage() {
   cat <<USAGE
 用法：
-  bash $SCRIPT_PATH              打开面板
-  bash $SCRIPT_PATH menu         打开面板
-  bash $SCRIPT_PATH once         立即执行一次 DDNS
-  bash $SCRIPT_PATH daemon       前台进入守护循环
-  bash $SCRIPT_PATH install      安装/修复 systemd 开机自启
-  bash $SCRIPT_PATH uninstall    卸载 systemd 服务
-  bash $SCRIPT_PATH start        启动后台服务
-  bash $SCRIPT_PATH stop         停止后台服务
-  bash $SCRIPT_PATH restart      重启后台服务
-  bash $SCRIPT_PATH status       查看状态
-  bash $SCRIPT_PATH logs         查看最近日志
-  bash $SCRIPT_PATH follow       实时日志
-  bash $SCRIPT_PATH config       查看配置
-  bash $SCRIPT_PATH disable-others 停止其他 DDNS 相关 systemd 服务
+  bash $SCRIPT_PATH                 打开面板
+  bash $SCRIPT_PATH menu            打开面板
+  bash $SCRIPT_PATH install         安装/修复 systemd 开机自启，并立即后台运行
+  bash $SCRIPT_PATH once            立即执行一次 DDNS
+  bash $SCRIPT_PATH daemon          前台进入守护循环
+  bash $SCRIPT_PATH uninstall       卸载 systemd 服务
+  bash $SCRIPT_PATH start           启动后台服务
+  bash $SCRIPT_PATH stop            停止后台服务
+  bash $SCRIPT_PATH restart         重启后台服务
+  bash $SCRIPT_PATH status          查看状态
+  bash $SCRIPT_PATH logs            查看最近日志
+  bash $SCRIPT_PATH follow          实时日志
+  bash $SCRIPT_PATH config          查看配置
+  bash $SCRIPT_PATH disable-others  停止其他 DDNS 相关 systemd 服务
+
+安装后面板命令：
+  ${PANEL_CMD}
 
 当前只管理：
   ${FULL_DOMAIN}
