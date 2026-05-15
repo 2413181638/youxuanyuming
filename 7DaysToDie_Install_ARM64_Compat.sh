@@ -1,5 +1,5 @@
 #!/bin/bash
-# 七日杀服务器多功能安装管理脚本 v1.2.2 ARM64兼容版 爱来自 伶依nekochan 抖音 ACFUN同名主播
+# 七日杀服务器多功能安装管理脚本 v1.2.4 Oracle Debian12 ARM64超时重试版 爱来自 伶依nekochan 抖音 ACFUN同名主播
 # # 本脚本部分代码由kimi生成 有问题请进群告诉我 737331541 记得上传日志
 
 # 颜色输出函数（必须先定义，后面才能使用）
@@ -77,9 +77,24 @@ DEFAULT_GAME_DIFFICULTY="1"
 # 说明：七日杀 Dedicated Server 官方 Linux 程序仍是 x86_64，ARM64 只能通过 Box64 等兼容层运行。
 # 下载/更新在 ARM64 上默认使用 DepotDownloader Docker 镜像，避免 SteamCMD 32位 x86 在 ARM 上的兼容问题。
 # ============================================
-SCRIPT_VERSION="1.2.2-arm64-compat"
-ARM64_DEPOT_IMAGE="${ARM64_DEPOT_IMAGE:-ghcr.io/sonroyaalmerol/steam-depot-downloader:latest}"
-ARM64_STEAMCMD_IMAGE="${ARM64_STEAMCMD_IMAGE:-ghcr.io/sonroyaalmerol/steamcmd-arm64:latest}"
+SCRIPT_VERSION="1.2.4-oracle-debian12-arm64-timeout-retry"
+ARM64_DEPOT_IMAGE="${ARM64_DEPOT_IMAGE:-ghcr.io/sonroyaalmerol/steam-depot-downloader:debian-bookworm}"
+ARM64_STEAMCMD_IMAGE="${ARM64_STEAMCMD_IMAGE:-sonroyaalmerol/steamcmd-arm64:steam-bookworm}"
+# ARM64 DepotDownloader 下载保护参数，可在运行脚本前用环境变量覆盖：
+#   ARM64_DEPOT_MAX_ATTEMPTS=5 ARM64_DEPOT_IDLE_TIMEOUT=900 sudo ./脚本.sh
+ARM64_DEPOT_MAX_ATTEMPTS="${ARM64_DEPOT_MAX_ATTEMPTS:-5}"          # 总重试次数
+ARM64_DEPOT_TOTAL_TIMEOUT="${ARM64_DEPOT_TOTAL_TIMEOUT:-3600}"    # 单次总超时，秒
+ARM64_DEPOT_IDLE_TIMEOUT="${ARM64_DEPOT_IDLE_TIMEOUT:-600}"       # 单次无输出超时，秒
+ARM64_DEPOT_RETRY_SLEEP="${ARM64_DEPOT_RETRY_SLEEP:-20}"          # 重试间隔，秒
+ARM64_DEPOT_PULL_TIMEOUT="${ARM64_DEPOT_PULL_TIMEOUT:-600}"       # docker pull 超时，秒
+ARM64_DEPOT_MAX_DOWNLOADS="${ARM64_DEPOT_MAX_DOWNLOADS:-8}"       # DepotDownloader 并发下载块
+ARM64_DEPOT_MAX_SERVERS="${ARM64_DEPOT_MAX_SERVERS:-8}"           # DepotDownloader 内容服务器数量
+ARM64_DEPOT_VALIDATE_MODE="${ARM64_DEPOT_VALIDATE_MODE:-auto}"    # auto/always/never
+ARM64_DEPOT_DEBUG="${ARM64_DEPOT_DEBUG:-0}"                       # 1=启用 DepotDownloader -debug
+ARM64_DEPOT_CELLID="${ARM64_DEPOT_CELLID:-}"                      # 可选：覆盖 Steam CellID
+ARM64_DEPOT_EXTRA_ARGS="${ARM64_DEPOT_EXTRA_ARGS:-}"              # 可选：追加 DepotDownloader 参数
+ARM64_SKIP_DOCKER_PULL="${ARM64_SKIP_DOCKER_PULL:-0}"             # 1=优先使用本地镜像，不主动pull
+ARM64_DEPOT_LINUX_DEPOT_ID="${ARM64_DEPOT_LINUX_DEPOT_ID:-294422}" # 七日杀Linux专服Depot
 
 get_host_arch_raw() {
     uname -m 2>/dev/null || echo "unknown"
@@ -187,25 +202,62 @@ install_box64_runtime_arm64() {
     fi
 
     yellow_echo "未检测到 Box64。ARM64 运行七日杀 x86_64 服务端需要 Box64。"
-    echo "将优先尝试 apt 包；如果系统源没有 box64，会询问是否用 snap 安装 box64-with-gl4es。"
+    yellow_echo "甲骨文 ARM / Debian 12 优先尝试预编译 deb 仓库；失败后可选源码编译。"
 
     sudo apt-get update
+    sudo apt-get install -y ca-certificates wget curl gnupg git build-essential cmake make pkg-config || true
 
+    # 1) 官方文档推荐的 Debian 系预编译仓库（Pi-Apps-Coders）。
+    if ask_yes_no "是否尝试安装预编译 Box64 包（推荐）？" "Y"; then
+        sudo rm -f /etc/apt/sources.list.d/box64.list /etc/apt/sources.list.d/box64.sources 2>/dev/null || true
+        sudo mkdir -p /usr/share/keyrings
+        if wget -qO- "https://pi-apps-coders.github.io/box64-debs/KEY.gpg" | sudo gpg --dearmor -o /usr/share/keyrings/box64-archive-keyring.gpg; then
+            cat <<'EOF' | sudo tee /etc/apt/sources.list.d/box64.sources >/dev/null
+Types: deb
+URIs: https://Pi-Apps-Coders.github.io/box64-debs/debian
+Suites: ./
+Signed-By: /usr/share/keyrings/box64-archive-keyring.gpg
+EOF
+            sudo apt-get update || true
+            sudo apt-get install -y box64-generic-arm || sudo apt-get install -y box64 || true
+        fi
+    fi
+
+    if get_box64_bin >/dev/null 2>&1; then
+        green_echo "✓ Box64 安装/检测成功: $(get_box64_bin)"
+        return 0
+    fi
+
+    # 2) Debian/Ubuntu 源里如果刚好有 box64，也尝试安装。
     if apt-cache show box64 >/dev/null 2>&1; then
-        sudo apt-get install -y box64
+        sudo apt-get install -y box64 || true
     elif apt-cache show box64-arm64 >/dev/null 2>&1; then
-        sudo apt-get install -y box64-arm64
-    else
-        yellow_echo "当前 apt 源未找到 box64/box64-arm64。"
-        if ask_yes_no "是否尝试通过 snap 安装 box64-with-gl4es？" "Y"; then
-            if ! command -v snap >/dev/null 2>&1; then
-                sudo apt-get install -y snapd
-                sudo systemctl enable --now snapd 2>/dev/null || true
-            fi
-            sudo snap install box64-with-gl4es || true
-            if command -v box64-with-gl4es.setup >/dev/null 2>&1; then
-                sudo box64-with-gl4es.setup || true
-            fi
+        sudo apt-get install -y box64-arm64 || true
+    fi
+
+    if get_box64_bin >/dev/null 2>&1; then
+        green_echo "✓ Box64 安装/检测成功: $(get_box64_bin)"
+        return 0
+    fi
+
+    # 3) 源码编译兜底。Oracle Ampere/Neoverse-N1 默认使用 ADLINK 参数，其它 ARM64 使用通用 ARM64 参数。
+    if ask_yes_no "预编译包不可用，是否从源码编译 Box64？" "Y"; then
+        local build_root="/tmp/box64-build-$(date +%s)"
+        local cmake_flags="-D ARM64=1 -D ARM_DYNAREC=ON -D CMAKE_BUILD_TYPE=RelWithDebInfo"
+        if lscpu 2>/dev/null | grep -qiE 'Ampere|Altra|Neoverse-N1'; then
+            cmake_flags="-D ADLINK=1 -D CMAKE_BUILD_TYPE=RelWithDebInfo"
+            yellow_echo "检测到疑似 Oracle Ampere/Neoverse-N1，源码编译将使用 ADLINK 参数。"
+        fi
+        if [ -n "$BOX64_CMAKE_FLAGS" ]; then
+            cmake_flags="$BOX64_CMAKE_FLAGS"
+            yellow_echo "使用自定义 BOX64_CMAKE_FLAGS: $cmake_flags"
+        fi
+        rm -rf "$build_root"
+        if git clone --depth 1 https://github.com/ptitSeb/box64.git "$build_root"; then
+            mkdir -p "$build_root/build"
+            (cd "$build_root/build" && cmake .. $cmake_flags && make -j"$(nproc)" && sudo make install) || true
+            sudo systemctl restart systemd-binfmt 2>/dev/null || true
+            sudo ldconfig 2>/dev/null || true
         fi
     fi
 
@@ -215,6 +267,7 @@ install_box64_runtime_arm64() {
     fi
 
     red_echo "仍未检测到 Box64。请手动安装 Box64 后再启动七日杀服务器。"
+    yellow_echo "可参考主菜单 21 或设置 BOX64_CMAKE_FLAGS 后重试。"
     return 1
 }
 
@@ -223,12 +276,183 @@ ensure_arm64_download_tool() {
         return 0
     fi
     ensure_docker_available || return 1
-    yellow_echo "正在拉取/更新 ARM64 下载镜像: $ARM64_DEPOT_IMAGE"
-    sudo docker pull "$ARM64_DEPOT_IMAGE" || {
-        red_echo "拉取 $ARM64_DEPOT_IMAGE 失败。请检查网络或手动设置 ARM64_DEPOT_IMAGE。"
+
+    local candidates=()
+    candidates+=("$ARM64_DEPOT_IMAGE")
+    candidates+=("ghcr.io/sonroyaalmerol/steam-depot-downloader:debian-bookworm")
+    candidates+=("ghcr.io/sonroyaalmerol/steam-depot-downloader:latest")
+    candidates+=("sonroyaalmerol/steam-depot-downloader:debian-bookworm")
+    candidates+=("sonroyaalmerol/steam-depot-downloader:latest")
+
+    local img pulled=""
+    for img in "${candidates[@]}"; do
+        [ -z "$img" ] && continue
+
+        if [ "$ARM64_SKIP_DOCKER_PULL" = "1" ] && sudo docker image inspect "$img" >/dev/null 2>&1; then
+            yellow_echo "使用本地 ARM64 下载镜像: $img"
+            pulled="$img"
+            break
+        fi
+
+        yellow_echo "正在拉取/更新 ARM64 下载镜像: $img（最多 ${ARM64_DEPOT_PULL_TIMEOUT}s）"
+        if timeout "$ARM64_DEPOT_PULL_TIMEOUT" sudo docker pull "$img"; then
+            pulled="$img"
+            break
+        fi
+
+        local rc=$?
+        if [ "$rc" -eq 124 ]; then
+            yellow_echo "镜像拉取超时，尝试下一个镜像源..."
+        else
+            yellow_echo "镜像拉取失败（退出码 $rc），尝试下一个镜像源..."
+        fi
+
+        # 如果本地已经有这个镜像，即使 pull 失败也允许使用，避免网络抖动导致完全不可用。
+        if sudo docker image inspect "$img" >/dev/null 2>&1; then
+            yellow_echo "检测到本地已有镜像，先使用本地版本: $img"
+            pulled="$img"
+            break
+        fi
+    done
+
+    if [ -z "$pulled" ]; then
+        red_echo "ARM64 下载镜像不可用。请检查 Docker 网络，或设置 ARM64_DEPOT_IMAGE。"
+        yellow_echo "可尝试：ARM64_SKIP_DOCKER_PULL=1 sudo ./脚本.sh（前提是本地已有镜像）"
         return 1
-    }
+    fi
+
+    ARM64_DEPOT_IMAGE="$pulled"
+    green_echo "✓ ARM64 下载镜像可用: $ARM64_DEPOT_IMAGE"
     return 0
+}
+
+cleanup_arm64_depot_jobs() {
+    yellow_echo "正在清理可能卡死的 DepotDownloader Docker 容器/进程..."
+    sudo docker ps -a --format '{{.ID}} {{.Names}}' 2>/dev/null | awk '$2 ~ /^7dtd_depot_/ {print $1}' | while read -r cid; do
+        [ -n "$cid" ] && sudo docker rm -f "$cid" >/dev/null 2>&1 || true
+    done
+    sudo pkill -f 'DepotDownloader.*294420' 2>/dev/null || true
+    sudo pkill -f 'steam-depot-downloader' 2>/dev/null || true
+    green_echo "✓ 清理完成"
+}
+
+kill_process_group_safely() {
+    local pgid="$1"
+    [ -z "$pgid" ] && return 0
+    kill -TERM -- "-$pgid" 2>/dev/null || sudo kill -TERM -- "-$pgid" 2>/dev/null || true
+    sleep 5
+    kill -KILL -- "-$pgid" 2>/dev/null || sudo kill -KILL -- "-$pgid" 2>/dev/null || true
+}
+
+run_command_with_watchdog() {
+    local label="$1"
+    local log_file="$2"
+    local total_timeout="$3"
+    local idle_timeout="$4"
+    shift 4
+
+    [[ "$total_timeout" =~ ^[0-9]+$ ]] || total_timeout=3600
+    [[ "$idle_timeout" =~ ^[0-9]+$ ]] || idle_timeout=600
+
+    mkdir -p "$(dirname "$log_file")"
+    : > "$log_file"
+
+    local wrapper
+    wrapper=$(mktemp "/tmp/7dtd_watchdog_${label//[^a-zA-Z0-9]/_}_XXXXXX.sh") || return 1
+    cat > "$wrapper" <<'EOF'
+#!/bin/bash
+set -o pipefail
+"$@" 2>&1 | tee -a "$RUN_LOG_FILE"
+exit ${PIPESTATUS[0]}
+EOF
+    chmod +x "$wrapper"
+
+    echo "[$(date '+%F %T')] START $label" >> "$log_file"
+    echo "[$(date '+%F %T')] CMD: $*" >> "$log_file"
+
+    RUN_LOG_FILE="$log_file" setsid "$wrapper" "$@" &
+    local pid=$!
+    local started now last_progress current_size last_size rc
+    started=$(date +%s)
+    last_progress=$started
+    last_size=0
+
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 5
+        now=$(date +%s)
+        current_size=0
+        [ -f "$log_file" ] && current_size=$(stat -c '%s' "$log_file" 2>/dev/null || echo 0)
+
+        if [ "$current_size" != "$last_size" ]; then
+            last_size="$current_size"
+            last_progress="$now"
+        fi
+
+        if [ $((now - started)) -ge "$total_timeout" ]; then
+            yellow_echo "[$label] 单次总超时 ${total_timeout}s，终止本次下载..."
+            echo "[$(date '+%F %T')] WATCHDOG_TOTAL_TIMEOUT ${total_timeout}s" >> "$log_file"
+            kill_process_group_safely "$pid"
+            wait "$pid" 2>/dev/null || true
+            rm -f "$wrapper"
+            return 124
+        fi
+
+        if [ $((now - last_progress)) -ge "$idle_timeout" ]; then
+            yellow_echo "[$label] 无输出 ${idle_timeout}s，疑似卡住，终止本次下载..."
+            echo "[$(date '+%F %T')] WATCHDOG_IDLE_TIMEOUT ${idle_timeout}s" >> "$log_file"
+            kill_process_group_safely "$pid"
+            wait "$pid" 2>/dev/null || true
+            rm -f "$wrapper"
+            return 125
+        fi
+    done
+
+    wait "$pid"
+    rc=$?
+    echo "[$(date '+%F %T')] EXIT $label rc=$rc" >> "$log_file"
+    rm -f "$wrapper"
+    return "$rc"
+}
+
+build_depotdownloader_args_arm64() {
+    local beta_branch="$1"
+    local mode="$2"
+    local include_validate="$3"
+
+    local args=(DepotDownloader -app 294420 -os linux -osarch 64 -dir "$server_dir")
+
+    # 模式：app 下载整个应用；depot 只拉 Linux depot。depot 模式用于 app 模式卡在 Got AppInfo 后的兜底。
+    if [ "$mode" = "depot" ]; then
+        args+=(-depot "$ARM64_DEPOT_LINUX_DEPOT_ID")
+    fi
+
+    if [ "$beta_branch" != "public" ] && [ "$beta_branch" != "Public" ]; then
+        args+=(-branch "$beta_branch")
+    fi
+
+    if [ "$include_validate" = "1" ]; then
+        args+=(-validate)
+    fi
+
+    if [[ "$ARM64_DEPOT_MAX_DOWNLOADS" =~ ^[0-9]+$ ]] && [ "$ARM64_DEPOT_MAX_DOWNLOADS" -gt 0 ]; then
+        args+=(-max-downloads "$ARM64_DEPOT_MAX_DOWNLOADS")
+    fi
+    if [[ "$ARM64_DEPOT_MAX_SERVERS" =~ ^[0-9]+$ ]] && [ "$ARM64_DEPOT_MAX_SERVERS" -gt 0 ]; then
+        args+=(-max-servers "$ARM64_DEPOT_MAX_SERVERS")
+    fi
+    if [ -n "$ARM64_DEPOT_CELLID" ]; then
+        args+=(-cellid "$ARM64_DEPOT_CELLID")
+    fi
+    if [ "$ARM64_DEPOT_DEBUG" = "1" ]; then
+        args+=(-debug)
+    fi
+    if [ -n "$ARM64_DEPOT_EXTRA_ARGS" ]; then
+        # shellcheck disable=SC2206
+        local extra=( $ARM64_DEPOT_EXTRA_ARGS )
+        args+=("${extra[@]}")
+    fi
+
+    printf '%s\n' "${args[@]}"
 }
 
 steam_depot_update_7dtd_arm64() {
@@ -245,25 +469,100 @@ steam_depot_update_7dtd_arm64() {
     fi
 
     ensure_arm64_download_tool || return 1
-    mkdir -p "$server_dir"
+    mkdir -p "$server_dir" "$log_dir/arm64_depot"
 
-    local docker_args=(run --rm --user 0:0)
-    docker_args+=(-v "$server_dir:$server_dir")
-    docker_args+=("$ARM64_DEPOT_IMAGE")
-
-    local dd_args=(DepotDownloader -app 294420 -os linux -osarch 64 -dir "$server_dir" -validate)
-    if [ "$beta_branch" != "public" ] && [ "$beta_branch" != "Public" ]; then
-        dd_args+=(-branch "$beta_branch")
-    fi
+    local max_attempts="$ARM64_DEPOT_MAX_ATTEMPTS"
+    [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=5
+    [ "$max_attempts" -lt 1 ] && max_attempts=1
 
     echo "============================================="
     echo "ARM64 下载/更新七日杀服务器"
-    echo "方式: DepotDownloader Docker"
+    echo "方式: DepotDownloader Docker + 超时看门狗"
     echo "版本分支: $beta_branch"
     echo "目标目录: $server_dir"
+    echo "镜像: $ARM64_DEPOT_IMAGE"
+    echo "单次总超时: ${ARM64_DEPOT_TOTAL_TIMEOUT}s"
+    echo "单次无输出超时: ${ARM64_DEPOT_IDLE_TIMEOUT}s"
+    echo "最大尝试次数: ${max_attempts}"
     echo "============================================="
 
-    if sudo docker "${docker_args[@]}" "${dd_args[@]}"; then
+    local attempt mode include_validate log_file container_name rc sleep_seconds
+    local success=0
+
+    for attempt in $(seq 1 "$max_attempts"); do
+        # 尝试策略：先完整 app+validate；再 app 不 validate；再只拉 Linux depot；后续交替重试。
+        mode="app"
+        include_validate=1
+        case "$attempt" in
+            1)
+                mode="app"
+                [ "$ARM64_DEPOT_VALIDATE_MODE" = "never" ] && include_validate=0
+                ;;
+            2)
+                mode="app"
+                [ "$ARM64_DEPOT_VALIDATE_MODE" = "always" ] && include_validate=1 || include_validate=0
+                ;;
+            3)
+                mode="depot"
+                [ "$ARM64_DEPOT_VALIDATE_MODE" = "always" ] && include_validate=1 || include_validate=0
+                ;;
+            *)
+                if [ $((attempt % 2)) -eq 0 ]; then mode="app"; else mode="depot"; fi
+                [ "$ARM64_DEPOT_VALIDATE_MODE" = "always" ] && include_validate=1 || include_validate=0
+                ;;
+        esac
+
+        container_name="7dtd_depot_$$_${attempt}"
+        log_file="$log_dir/arm64_depot/depot_${beta_branch}_${mode}_attempt${attempt}_$(date +%Y%m%d_%H%M%S).log"
+        sudo docker rm -f "$container_name" >/dev/null 2>&1 || true
+
+        mapfile -t dd_args < <(build_depotdownloader_args_arm64 "$beta_branch" "$mode" "$include_validate")
+
+        local docker_args=(run --rm --init --network host --name "$container_name" --user 0:0)
+        docker_args+=(-v "$server_dir:$server_dir")
+        docker_args+=("$ARM64_DEPOT_IMAGE")
+
+        echo ""
+        echo "============================================="
+        echo "DepotDownloader 尝试 ($attempt/$max_attempts)"
+        echo "模式: $mode | validate: $include_validate | 日志: $log_file"
+        echo "============================================="
+
+        run_command_with_watchdog "depot_${attempt}_${mode}" "$log_file" "$ARM64_DEPOT_TOTAL_TIMEOUT" "$ARM64_DEPOT_IDLE_TIMEOUT" \
+            sudo docker "${docker_args[@]}" "${dd_args[@]}"
+        rc=$?
+
+        # 确保超时后不会残留容器。
+        sudo docker rm -f "$container_name" >/dev/null 2>&1 || true
+
+        if [ "$rc" -eq 0 ] && [ -f "$server_dir/7DaysToDieServer.x86_64" ]; then
+            success=1
+            break
+        fi
+
+        if [ "$rc" -eq 0 ] && [ ! -f "$server_dir/7DaysToDieServer.x86_64" ]; then
+            red_echo "DepotDownloader 返回成功，但未找到 7DaysToDieServer.x86_64，继续重试。"
+        elif [ "$rc" -eq 124 ]; then
+            yellow_echo "本次下载达到总超时。"
+        elif [ "$rc" -eq 125 ]; then
+            yellow_echo "本次下载因长时间无输出被判定卡住。"
+            if grep -q "Got AppInfo for 294420" "$log_file" 2>/dev/null && ! grep -q "Processing depot\|Downloading depot" "$log_file" 2>/dev/null; then
+                yellow_echo "日志显示卡在 Got AppInfo 附近；下一次会尝试切换下载模式/跳过validate。"
+            fi
+        else
+            yellow_echo "DepotDownloader 失败，退出码: $rc"
+        fi
+
+        yellow_echo "失败日志保留在: $log_file"
+        if [ "$attempt" -lt "$max_attempts" ]; then
+            sleep_seconds="$ARM64_DEPOT_RETRY_SLEEP"
+            [[ "$sleep_seconds" =~ ^[0-9]+$ ]] || sleep_seconds=20
+            yellow_echo "${sleep_seconds}s 后重试..."
+            sleep "$sleep_seconds"
+        fi
+    done
+
+    if [ "$success" -eq 1 ]; then
         chmod +x "$server_dir/7DaysToDieServer.x86_64" 2>/dev/null || true
         if [ -n "$REAL_user" ] && [ "$REAL_user" != "root" ]; then
             sudo chown -R "$REAL_user:$REAL_user" "$server_dir" 2>/dev/null || true
@@ -273,9 +572,10 @@ steam_depot_update_7dtd_arm64() {
     fi
 
     red_echo "ARM64 模式下载/更新失败。"
+    yellow_echo "你可以查看日志目录: $log_dir/arm64_depot"
+    yellow_echo "如一直卡在 Got AppInfo，可尝试：ARM64_DEPOT_IDLE_TIMEOUT=900 ARM64_DEPOT_VALIDATE_MODE=never sudo ./脚本.sh"
     return 1
 }
-
 extract_steamclient_so_arm64() {
     if ! is_arm64_host; then
         return 1
@@ -301,9 +601,15 @@ extract_steamclient_so_arm64() {
     fi
 
     yellow_echo "[Steam修复] 尝试从 ARM64 SteamCMD 镜像提取 steamclient.so ..."
-    sudo docker pull "$ARM64_STEAMCMD_IMAGE" >/dev/null 2>&1 || true
-    sudo docker run --rm --user 0:0 -v "$steamcmd_dir:/host_steamcmd" "$ARM64_STEAMCMD_IMAGE" \
-        bash -lc 'cp -f /home/steam/steamcmd/linux64/steamclient.so /host_steamcmd/steamclient.so 2>/dev/null || true' || true
+    local steamcmd_images=("$ARM64_STEAMCMD_IMAGE" "sonroyaalmerol/steamcmd-arm64:steam-bookworm" "sonroyaalmerol/steamcmd-arm64:latest")
+    local img
+    for img in "${steamcmd_images[@]}"; do
+        [ -z "$img" ] && continue
+        sudo docker pull "$img" >/dev/null 2>&1 || continue
+        sudo docker run --rm --user 0:0 -v "$steamcmd_dir:/host_steamcmd" "$img" \
+            bash -lc 'cp -f /home/steam/steamcmd/linux64/steamclient.so /host_steamcmd/steamclient.so 2>/dev/null || cp -f /root/Steam/linux64/steamclient.so /host_steamcmd/steamclient.so 2>/dev/null || true' || true
+        [ -f "$steamcmd_dir/steamclient.so" ] && break
+    done
 
     if [ -f "$steamcmd_dir/steamclient.so" ]; then
         cp -f "$steamcmd_dir/steamclient.so" "$server_dir/steamclient.so" 2>/dev/null || true
@@ -327,6 +633,8 @@ arm64_compat_menu() {
         echo "3. 安装/修复 Docker 下载环境"
         echo "4. 拉取 ARM64 下载镜像"
         echo "5. 提取/修复 steamclient.so"
+        echo "6. 清理卡死的 DepotDownloader 容器/进程"
+        echo "7. 显示 ARM64 下载超时/重试参数"
         echo "0. 返回主菜单"
         echo "============================================="
         read -p "请输入操作编号: " arm_choice
@@ -341,6 +649,20 @@ arm64_compat_menu() {
             3) ensure_docker_available; read -p "按回车键继续..." ;;
             4) ensure_arm64_download_tool; read -p "按回车键继续..." ;;
             5) extract_steamclient_so_arm64; read -p "按回车键继续..." ;;
+            6) cleanup_arm64_depot_jobs; read -p "按回车键继续..." ;;
+            7)
+                echo "ARM64_DEPOT_MAX_ATTEMPTS=$ARM64_DEPOT_MAX_ATTEMPTS"
+                echo "ARM64_DEPOT_TOTAL_TIMEOUT=$ARM64_DEPOT_TOTAL_TIMEOUT"
+                echo "ARM64_DEPOT_IDLE_TIMEOUT=$ARM64_DEPOT_IDLE_TIMEOUT"
+                echo "ARM64_DEPOT_RETRY_SLEEP=$ARM64_DEPOT_RETRY_SLEEP"
+                echo "ARM64_DEPOT_PULL_TIMEOUT=$ARM64_DEPOT_PULL_TIMEOUT"
+                echo "ARM64_DEPOT_MAX_DOWNLOADS=$ARM64_DEPOT_MAX_DOWNLOADS"
+                echo "ARM64_DEPOT_MAX_SERVERS=$ARM64_DEPOT_MAX_SERVERS"
+                echo "ARM64_DEPOT_VALIDATE_MODE=$ARM64_DEPOT_VALIDATE_MODE"
+                echo "ARM64_DEPOT_LINUX_DEPOT_ID=$ARM64_DEPOT_LINUX_DEPOT_ID"
+                echo "ARM64_DEPOT_CELLID=${ARM64_DEPOT_CELLID:-未设置}"
+                echo "ARM64_DEPOT_EXTRA_ARGS=${ARM64_DEPOT_EXTRA_ARGS:-未设置}"
+                read -p "按回车键继续..." ;;
             0) return 0 ;;
             *) red_echo "无效选项" ;;
         esac
@@ -926,7 +1248,7 @@ steamcmd_update_7dtd_with_retry() {
         timeout 300 ./steamcmd.sh +quit >/dev/null 2>&1 || true
 
         echo "[阶段 2/2] 下载/更新七日杀服务器文件（实时日志）..."
-        update_log="/tmp/7dtd_steamcmd_update_${$}_${attempt}.log"
+        update_log="/tmp/7dtd_steamcmd_update_$$_${attempt}.log"
         timeout 1800 ./steamcmd.sh \
             +@ShutdownOnFailedCommand 1 \
             +@NoPromptForPassword 1 \
@@ -1090,7 +1412,9 @@ switch_server_version() {
     backup_server_config_auto "switch_version"
     echo "====== 切换服务器版本 ======"
 
-    if [ ! -f "$steamcmd_dir/steamcmd.sh" ]; then
+    if is_arm64_host; then
+        ensure_arm64_download_tool || return 1
+    elif [ ! -f "$steamcmd_dir/steamcmd.sh" ]; then
         red_echo "SteamCMD 未安装"
         return 1
     fi
@@ -8203,7 +8527,7 @@ main_menu() {
         local current_version=$(get_current_version)
         
         echo "============================================="
-        echo "      七日杀服务器多功能管理脚本 v1.2.2 ARM64兼容版"
+        echo "      七日杀服务器多功能管理脚本 v1.2.4 Oracle/Debian12 ARM64兼容版"
         echo "      当前服务器版本: $current_version"
         echo "============================================="
         echo "===  脚本来自 伶依nekochan 抖音 ACFUN同名主播 ==="
