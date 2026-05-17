@@ -1,5 +1,5 @@
 #!/bin/bash
-# 七日杀服务器多功能安装管理脚本 v1.2.6 Oracle Debian12 ARM64 Box86/Box64 SteamCMD版 爱来自 伶依nekochan 抖音 ACFUN同名主播
+# 七日杀服务器多功能安装管理脚本 v1.2.7 Oracle Debian12 ARM64 Box86/Box64 SteamCMD版（含卸载功能） 爱来自 伶依nekochan 抖音 ACFUN同名主播
 # # 本脚本部分代码由kimi生成 有问题请进群告诉我 737331541 记得上传日志
 
 # 颜色输出函数（必须先定义，后面才能使用）
@@ -77,7 +77,7 @@ DEFAULT_GAME_DIFFICULTY="1"
 # 说明：七日杀 Dedicated Server 官方 Linux 程序仍是 x86_64，ARM64 只能通过 Box64 等兼容层运行。
 # 下载/更新在 ARM64 上默认使用本机 SteamCMD + Box86，启动使用 Box64。Docker/DepotDownloader 仅作为兜底。
 # ============================================
-SCRIPT_VERSION="1.2.6-oracle-debian12-arm64-boxsteamcmd"
+SCRIPT_VERSION="1.2.7-oracle-debian12-arm64-boxsteamcmd-uninstall"
 ARM64_DEPOT_IMAGE="${ARM64_DEPOT_IMAGE:-ghcr.io/sonroyaalmerol/steam-depot-downloader:debian-bookworm}"
 ARM64_STEAMCMD_IMAGE="${ARM64_STEAMCMD_IMAGE:-sonroyaalmerol/steamcmd-arm64:root-bookworm}"
 # ARM64 DepotDownloader 下载保护参数，可在运行脚本前用环境变量覆盖：
@@ -9172,6 +9172,256 @@ manage_admins_menu() {
     done
 }
 
+
+# ============================================
+# 卸载 / 清理功能
+# ============================================
+print_uninstall_paths() {
+    echo "====== 当前七日杀相关路径 ======"
+    echo "用户目录: $home_dir"
+    echo "服务端目录: $server_dir"
+    echo "SteamCMD目录: $steamcmd_dir"
+    echo "存档/用户数据: $home_dir/.local/share/7DaysToDie"
+    echo "存档目录: $home_dir/.local/share/7DaysToDie/Saves"
+    echo "日志目录: $log_dir"
+    echo "存档备份目录: $home_dir/7dtd_save_backups"
+    echo "配置备份目录: $config_backup_dir"
+    echo "Mod备份目录: $home_dir/7dtd_mods_backup"
+    echo "安装配置: $config_file"
+    echo "版本记录: $home_dir/.7dtd_version"
+    echo "启动预设: $home_dir/.7dtd_startup_preset.conf"
+    echo "================================"
+}
+
+remove_path_safe() {
+    local target="$1"
+    local label="${2:-$target}"
+
+    if [ -z "$target" ]; then
+        return 0
+    fi
+
+    # 防误删保护：拒绝删除系统关键目录或用户根目录
+    case "$target" in
+        "/"|"/root"|"/home"|"/usr"|"/usr/local"|"/etc"|"/var"|"/tmp"|"$home_dir")
+            red_echo "[安全保护] 拒绝删除危险路径: $target"
+            return 1
+            ;;
+    esac
+
+    if [ -e "$target" ]; then
+        echo "删除 $label: $target"
+        rm -rf -- "$target"
+    else
+        echo "跳过 $label：不存在 ($target)"
+    fi
+}
+
+backup_before_uninstall() {
+    local backup_root="$home_dir/7dtd_uninstall_backup_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$backup_root"
+
+    echo "====== 卸载前备份 ======"
+    echo "备份目录: $backup_root"
+
+    if [ -f "$server_dir/serverconfig.xml" ]; then
+        cp -a "$server_dir/serverconfig.xml" "$backup_root/serverconfig.xml" 2>/dev/null && green_echo "✓ 已备份 serverconfig.xml"
+    fi
+
+    if [ -d "$server_dir/Mods" ]; then
+        tar -czf "$backup_root/Mods.tar.gz" -C "$server_dir" Mods 2>/dev/null && green_echo "✓ 已备份 Mods"
+    fi
+
+    if [ -d "$home_dir/.local/share/7DaysToDie/Saves" ]; then
+        tar -czf "$backup_root/Saves.tar.gz" -C "$home_dir/.local/share/7DaysToDie" Saves 2>/dev/null && green_echo "✓ 已备份 Saves"
+    fi
+
+    if [ -d "$home_dir/.local/share/7DaysToDie/GeneratedWorlds" ]; then
+        tar -czf "$backup_root/GeneratedWorlds.tar.gz" -C "$home_dir/.local/share/7DaysToDie" GeneratedWorlds 2>/dev/null && green_echo "✓ 已备份 GeneratedWorlds"
+    fi
+
+    if [ -f "$home_dir/.local/share/7DaysToDie/Saves/serveradmin.xml" ]; then
+        cp -a "$home_dir/.local/share/7DaysToDie/Saves/serveradmin.xml" "$backup_root/serveradmin.xml" 2>/dev/null && green_echo "✓ 已备份 serveradmin.xml"
+    fi
+
+    if [ -f "$config_file" ]; then
+        cp -a "$config_file" "$backup_root/7dtd_install_config" 2>/dev/null || true
+    fi
+    if [ -f "$home_dir/.7dtd_startup_preset.conf" ]; then
+        cp -a "$home_dir/.7dtd_startup_preset.conf" "$backup_root/7dtd_startup_preset.conf" 2>/dev/null || true
+    fi
+    if [ -f "$home_dir/.7dtd_version" ]; then
+        cp -a "$home_dir/.7dtd_version" "$backup_root/7dtd_version" 2>/dev/null || true
+    fi
+
+    green_echo "✓ 卸载前备份完成: $backup_root"
+    echo "$backup_root"
+}
+
+cleanup_7dtd_scheduled_tasks() {
+    echo "====== 清理七日杀计划任务 / 守护脚本 ======"
+
+    sudo rm -f \
+        /etc/cron.d/7dtd_idle_restart \
+        /etc/cron.d/7dtd_crash_recovery \
+        /etc/cron.d/7dtd_auto_backup \
+        /etc/cron.d/7dtd_cleanup \
+        /etc/cron.d/7dtd_priority \
+        2>/dev/null || true
+
+    rm -f \
+        "$home_dir/7dtd_idle_restart.sh" \
+        "$home_dir/7dtd_crash_recovery.sh" \
+        "$home_dir/7dtd_auto_backup.sh" \
+        "$home_dir/7dtd_cleanup.sh" \
+        "$home_dir/7dtd_priority.sh" \
+        "$home_dir/.7dtd_idle_restart.conf" \
+        "$home_dir/.7dtd_crash_recovery.conf" \
+        "$home_dir/.7dtd_backup_config" \
+        "$home_dir/.7dtd_cleanup.conf" \
+        "$home_dir/.7dtd_idle_restart.lock" \
+        "$home_dir/.7dtd_restart_maintenance" \
+        "$home_dir/.7dtd_manual_stop.flag" \
+        "$home_dir/.7dtd_restart_count" \
+        "$home_dir/.7dtd_restart_hour" \
+        2>/dev/null || true
+
+    # 兼容可能创建过的 systemd 服务名
+    for svc in 7dtd 7DaysToDie seven-days-to-die; do
+        if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}\.service"; then
+            sudo systemctl stop "$svc" 2>/dev/null || true
+            sudo systemctl disable "$svc" 2>/dev/null || true
+            sudo rm -f "/etc/systemd/system/${svc}.service" "/usr/lib/systemd/system/${svc}.service" 2>/dev/null || true
+        fi
+    done
+    sudo systemctl daemon-reload 2>/dev/null || true
+    sudo systemctl reset-failed 2>/dev/null || true
+
+    green_echo "✓ 七日杀计划任务 / 守护脚本已清理"
+}
+
+uninstall_7dtd_menu() {
+    while true; do
+        echo "============================================="
+        echo "          卸载 / 清理七日杀服务器"
+        echo "============================================="
+        print_uninstall_paths
+        echo "说明："
+        echo "- 默认不会删除本管理脚本"
+        echo "- 默认不会删除 Box64 / Box86 / Docker / FRP / TeamSpeak"
+        echo "- 完全卸载会删除存档，请谨慎选择"
+        echo ""
+        echo "1. 轻度卸载：只删除七日杀服务端文件，保留存档/SteamCMD/备份"
+        echo "2. 标准卸载：删除服务端文件 + SteamCMD + 计划任务，保留存档/备份"
+        echo "3. 完全卸载：删除服务端/SteamCMD/存档/生成地图/配置/日志/备份"
+        echo "4. 仅清理七日杀计划任务 / 守护脚本"
+        echo "5. 查看卸载目标路径"
+        echo "0. 返回主菜单"
+        echo "============================================="
+        read -p "请输入操作编号: " uninstall_choice
+
+        case "$uninstall_choice" in
+            1)
+                echo "====== 轻度卸载 ======"
+                yellow_echo "将删除: $server_dir"
+                yellow_echo "将保留: 存档、SteamCMD、备份、本脚本"
+                if ! ask_yes_no "确认执行轻度卸载吗" "N"; then
+                    echo "已取消"
+                    continue
+                fi
+                stop_server
+                cleanup_7dtd_scheduled_tasks
+                remove_path_safe "$server_dir" "七日杀服务端目录"
+                green_echo "✓ 轻度卸载完成"
+                read -p "按回车键继续..." ;;
+
+            2)
+                echo "====== 标准卸载 ======"
+                yellow_echo "将删除: $server_dir、$steamcmd_dir、七日杀计划任务/守护脚本"
+                yellow_echo "将保留: $home_dir/.local/share/7DaysToDie/Saves、备份、本脚本"
+                if ask_yes_no "是否在卸载前备份配置/存档/Mods" "Y"; then
+                    backup_before_uninstall >/dev/null
+                fi
+                if ! ask_yes_no "确认执行标准卸载吗" "N"; then
+                    echo "已取消"
+                    continue
+                fi
+                stop_server
+                cleanup_7dtd_scheduled_tasks
+                remove_path_safe "$server_dir" "七日杀服务端目录"
+                remove_path_safe "$steamcmd_dir" "SteamCMD目录"
+                rm -f "$config_file" "$home_dir/.7dtd_version" "$home_dir/.7dtd_startup_preset.conf" 2>/dev/null || true
+                # 如果 /root/7DaysToDie 已空，则删除外层目录
+                rmdir "$seven_days_dir" 2>/dev/null || true
+                green_echo "✓ 标准卸载完成，存档和备份已保留"
+                read -p "按回车键继续..." ;;
+
+            3)
+                echo "====== 完全卸载 ======"
+                red_echo "危险：此操作会删除七日杀存档、生成地图、备份和日志。"
+                red_echo "将删除:"
+                echo "  - $seven_days_dir"
+                echo "  - $steamcmd_dir"
+                echo "  - $home_dir/.local/share/7DaysToDie"
+                echo "  - $log_dir"
+                echo "  - $home_dir/7dtd_save_backups"
+                echo "  - $home_dir/7dtd_backups"
+                echo "  - $home_dir/7dtd_config_backups"
+                echo "  - $home_dir/7dtd_mods_backup"
+                echo "  - 七日杀相关配置/计划任务/守护脚本"
+                if ask_yes_no "是否在完全卸载前先创建最终备份" "Y"; then
+                    backup_before_uninstall >/dev/null
+                    yellow_echo "注意：最终备份位于 $home_dir/7dtd_uninstall_backup_*，完全卸载不会自动删除该最终备份。"
+                fi
+                read -p "请输入 DELETE 确认完全卸载: " confirm_delete
+                if [ "$confirm_delete" != "DELETE" ]; then
+                    yellow_echo "确认词不正确，已取消"
+                    continue
+                fi
+                stop_server
+                cleanup_7dtd_scheduled_tasks
+                remove_path_safe "$seven_days_dir" "七日杀安装目录"
+                remove_path_safe "$steamcmd_dir" "SteamCMD目录"
+                remove_path_safe "$home_dir/.local/share/7DaysToDie" "七日杀用户数据/存档目录"
+                remove_path_safe "$log_dir" "脚本日志目录"
+                remove_path_safe "$home_dir/7dtd_save_backups" "存档备份目录"
+                remove_path_safe "$home_dir/7dtd_backups" "配置/重装备份目录"
+                remove_path_safe "$home_dir/7dtd_config_backups" "配置备份目录"
+                remove_path_safe "$home_dir/7dtd_mods_backup" "Mod备份目录"
+                rm -f \
+                    "$config_file" \
+                    "$home_dir/.7dtd_version" \
+                    "$home_dir/.7dtd_startup_preset.conf" \
+                    "$home_dir/7dtd_admin_audit.log" \
+                    "$home_dir/7dtd_idle_restart.log" \
+                    "$home_dir/7dtd_crash_recovery.log" \
+                    "$home_dir/7dtd_cleanup.log" \
+                    "$home_dir/7dtd_auto_backup.log" \
+                    "$home_dir/.7dtd_swap_set" \
+                    2>/dev/null || true
+                green_echo "✓ 完全卸载完成"
+                yellow_echo "如需卸载 Box64/Box86/Docker/FRP/TeamSpeak，请单独确认后手动处理。"
+                read -p "按回车键继续..." ;;
+
+            4)
+                if ask_yes_no "确认只清理七日杀计划任务 / 守护脚本吗" "Y"; then
+                    cleanup_7dtd_scheduled_tasks
+                fi
+                read -p "按回车键继续..." ;;
+
+            5)
+                print_uninstall_paths
+                read -p "按回车键继续..." ;;
+
+            0)
+                return 0 ;;
+
+            *)
+                red_echo "无效选项" ;;
+        esac
+    done
+}
+
 # --- 主菜单 ---
 main_menu() {
     while true; do
@@ -9179,7 +9429,7 @@ main_menu() {
         local current_version=$(get_current_version)
         
         echo "============================================="
-        echo "      七日杀服务器多功能管理脚本 v1.2.4 Oracle/Debian12 ARM64兼容版"
+        echo "      七日杀服务器多功能管理脚本 v1.2.7 Oracle/Debian12 ARM64兼容卸载版"
         echo "      当前服务器版本: $current_version"
         echo "============================================="
         echo "===  脚本来自 伶依nekochan 抖音 ACFUN同名主播 ==="
@@ -9206,6 +9456,7 @@ main_menu() {
         echo "19. 设置系统虚拟内存"
         echo "20. 磁盘管理（检测/挂载/迁移）"
         echo "21. ARM64兼容环境（Box64/Box86/SteamCMD）"
+        echo "22. 卸载/清理七日杀服务器"
         echo "0. 退出脚本"
         echo "============================================="
         read -p "请输入操作编号: " choice
@@ -9232,6 +9483,7 @@ main_menu() {
             19) set_swap_memory; read -p "按回车键继续..." ;;
             20) manage_disk_menu ;;
             21) arm64_compat_menu ;;
+            22) uninstall_7dtd_menu ;;
             0) echo "感谢使用，再见！"; exit 0 ;;
             *) red_echo "无效选项，请重新输入！" ;;
         esac
