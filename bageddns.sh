@@ -5,7 +5,7 @@ set -o pipefail
 
 # ========== 固定配置 ==========
 # 建议用环境变量覆盖：export CF_API_TOKEN='你的 Cloudflare Token'
-CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
+CF_API_TOKEN="${CF_API_TOKEN:-}"
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
 CF_RECORD_TYPE="A"
@@ -68,7 +68,7 @@ validate_ip(){
 _get_wan_ip(){
   local sites=("${WANIPSITES_IPV4[@]}") s ip
   for s in "${sites[@]}"; do
-    ip="$(curl -fsS --retry 3 --retry-all-errors --connect-timeout 5 --max-time 10 "$s" || true)"
+    ip="$(curl -fsS --retry 1 --retry-all-errors --connect-timeout 3 --max-time 5 "$s" || true)"
     ip="$(_trim "${ip:-}")"
     if [ -n "$ip" ] && validate_ip "$ip"; then
       printf "%s" "$ip"
@@ -107,60 +107,70 @@ is_loss_100(){
 }
 
 # ========== 换 IP ==========
-CHANGE_IP_HTTP_TIMEOUT=60
-CHANGE_VERIFY_WINDOW=90
-CHANGE_VERIFY_POLL=5
-CHANGE_IP_MAX_ATTEMPTS=2
-CHANGE_IP_REPEAT_DELAY=10
+# BageVM Hinet restip 接口。不要把 apikey 写进公开 GitHub，运行前用环境变量传入：
+#   export BAGEVM_APIKEY='你的 BageVM apikey'
+BAGEVM_VMIP="${BAGEVM_VMIP:-10.92.2.30}"
+BAGEVM_APIKEY="${BAGEVM_APIKEY:-}"
+CHANGE_IP_CONNECT_TIMEOUT="${CHANGE_IP_CONNECT_TIMEOUT:-3}"
+CHANGE_IP_HTTP_TIMEOUT="${CHANGE_IP_HTTP_TIMEOUT:-15}"
+
+_mask_change_url(){
+  printf '%s' "$1" | sed -E 's/(apikey=)[^&]+/\1****/g'
+}
 
 _change_ip_target_url(){
-  local host_all="${HOST_SHORT} ${HOST_FULL}"
-  case "$host_all" in
-    (*xqtw1*) echo "http://192.168.10.253" ;;
-    (*xqtw2*|*xqtw3*) echo "http://10.10.8.10/ip/change.php" ;;
-    (*) echo "http://192.168.10.253" ;;
-  esac
+  if [ -z "${BAGEVM_APIKEY:-}" ]; then
+    log "❌ BAGEVM_APIKEY 为空，无法触发 BageVM 换 IP"
+    return 1
+  fi
+
+  printf 'https://www.bagevm.com/index.php?m=hinet&vmip=%s&apikey=%s&action=restip' \
+    "$BAGEVM_VMIP" "$BAGEVM_APIKEY"
 }
 
 _trigger_change_ip(){
-  local url; url="$(_change_ip_target_url)" || return 1
-  log "↻ 触发换 IP：host='${HOST_SHORT}' -> ${url}"
-  ( curl -sS --connect-timeout 3 --max-time "$CHANGE_IP_HTTP_TIMEOUT" "$url" >/dev/null 2>&1 ) &
-  return 0
+  local url safe_url out http
+  url="$(_change_ip_target_url)" || return 1
+  safe_url="$(_mask_change_url "$url")"
+
+  log "↻ 触发 BageVM 换 IP：vmip=${BAGEVM_VMIP} -> ${safe_url}"
+
+  out="$(curl -sS --connect-timeout "$CHANGE_IP_CONNECT_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" \
+    -w ' HTTP_STATUS=%{http_code}' "$url" 2>&1 || true)"
+  out="$(printf '%s' "$out" | tr '\r\n' ' ' | cut -c1-500)"
+  http="$(printf '%s' "$out" | sed -nE 's/.*HTTP_STATUS=([0-9]+).*/\1/p')"
+
+  log "↩︎ BageVM 换 IP 接口返回：${out:-empty}"
+
+  # HTTP 2xx 视为请求已送达；实际是否成功以接口返回内容为准。
+  if [ -n "$http" ] && [ "$http" -ge 200 ] && [ "$http" -lt 300 ]; then
+    return 0
+  fi
+  return 1
 }
 
 call_change_ip(){
-  local before after deadline try_idx
+  local before n=0
   before="$(_get_wan_ip || echo "")"
 
   if [ -n "$before" ]; then
-    log "🚀 执行换 IP（主机=${HOST_SHORT}，当前 IP=${before}）..."
+    log "🚀 执行换 IP（主机=${HOST_SHORT}，当前公网 IP=${before}，BageVM VMIP=${BAGEVM_VMIP}）..."
   else
-    log "🚀 执行换 IP（主机=${HOST_SHORT}，当前 IP 未知）..."
+    log "🚀 执行换 IP（主机=${HOST_SHORT}，当前公网 IP 未知，BageVM VMIP=${BAGEVM_VMIP}）..."
   fi
 
-  for try_idx in $(seq 1 "$CHANGE_IP_MAX_ATTEMPTS"); do
-    _trigger_change_ip || log "⚠️ 第 ${try_idx} 次触发失败"
-    deadline=$(( $(date +%s) + CHANGE_VERIFY_WINDOW ))
-    while [ "$(date +%s)" -lt "$deadline" ]; do
-      sleep "$CHANGE_VERIFY_POLL"
-      after="$(_get_wan_ip || echo "")"
-      if [ -n "$after" ] && { [ -z "$before" ] || [ "$before" != "$after" ]; }; then
-        local n=0
-        [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" || echo 0)"
-        n=$((n+1))
-        echo "$n" > "$CHANGE_CNT_FILE"
-        log "📶 已更换 IP：${before:-unknown} -> ${after}（累计 $n 次）"
-        return 0
-      fi
-    done
-    log "⏱️ ${CHANGE_VERIFY_WINDOW}s 内未检测到 IP 变化，重试..."
-    sleep "$CHANGE_IP_REPEAT_DELAY"
-  done
+  if _trigger_change_ip; then
+    [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" 2>/dev/null || echo 0)"
+    n=$((n+1))
+    echo "$n" > "$CHANGE_CNT_FILE"
+    log "✅ 已发送 BageVM 换 IP 请求，不再等待 90 秒验证（累计 $n 次）"
+    return 0
+  fi
 
-  log "😶 已触发换 IP，但未检测到公网 IP 变化"
+  log "⚠️ BageVM 换 IP 请求失败，请检查 BAGEVM_APIKEY / BAGEVM_VMIP / 网络连通性"
   return 1
 }
+
 
 # ========== 检测：丢包率 100% 就换 IP ==========
 check_ip_reachable(){
