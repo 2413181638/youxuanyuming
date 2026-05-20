@@ -5,7 +5,7 @@ set -o pipefail
 
 # ========== 固定配置 ==========
 # 建议用环境变量覆盖：export CF_API_TOKEN='你的 Cloudflare Token'
-CF_API_TOKEN="${CF_API_TOKEN:-iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1}"
+CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
 CF_RECORD_TYPE="A"
