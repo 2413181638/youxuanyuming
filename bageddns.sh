@@ -5,7 +5,7 @@ set -o pipefail
 
 # ========== 固定配置 ==========
 # 建议用环境变量覆盖：export CF_API_TOKEN='你的 Cloudflare Token'
-CF_API_TOKEN="iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1"
+CF_API_TOKEN="${CF_API_TOKEN:-iG0a8KAsRhTW2-octTtLUlWNm8-tfRhcBr1h8ry1}"
 CF_ZONE_NAME="5653111.xyz"
 CF_RECORD_NAME="twddns.5653111.xyz"
 CF_RECORD_TYPE="A"
@@ -44,6 +44,7 @@ PING_TARGET="8.138.53.208" # 只用这个目标检测
 PING_COUNT=5               # ping 次数
 PING_TIMEOUT=2             # 每次等待秒数
 PING_INTERVAL=0.2          # ping 间隔（秒）
+LOSS_THRESHOLD="${LOSS_THRESHOLD:-80}" # 丢包率达到这个值就换 IP
 
 # ========== 常用工具 ==========
 log(){ printf "[%s] %s\n" "$(date '+%F %T')" "$*" >&2; }
@@ -68,7 +69,7 @@ validate_ip(){
 _get_wan_ip(){
   local sites=("${WANIPSITES_IPV4[@]}") s ip
   for s in "${sites[@]}"; do
-    ip="$(curl -fsS --retry 1 --retry-all-errors --connect-timeout 3 --max-time 5 "$s" || true)"
+    ip="$(curl -fsS --retry 3 --retry-all-errors --connect-timeout 5 --max-time 10 "$s" || true)"
     ip="$(_trim "${ip:-}")"
     if [ -n "$ip" ] && validate_ip "$ip"; then
       printf "%s" "$ip"
@@ -78,12 +79,68 @@ _get_wan_ip(){
   return 1
 }
 
-# 从 ping 输出里只提取数字丢包率：0、20、100 等。
+# ========== 换 IP ==========
+# BageVM Hinet restip 接口：访问/ curl 这个 URL 即触发换 IP。
+# 注意：不要把含 apikey 的脚本提交到公开仓库。
+BAGEVM_CHANGE_URL="${BAGEVM_CHANGE_URL:-https://www.bagevm.com/index.php?m=hinet&vmip=10.92.2.30&apikey=9a312e84dfe6571400e37193ac06a2da&action=restip}"
+CHANGE_IP_CONNECT_TIMEOUT="${CHANGE_IP_CONNECT_TIMEOUT:-3}"
+CHANGE_IP_HTTP_TIMEOUT="${CHANGE_IP_HTTP_TIMEOUT:-15}"
+
+_mask_change_url(){
+  printf '%s' "$1" | sed -E 's/(apikey=)[^&]+/\1****/g'
+}
+
+_trigger_change_ip(){
+  local url safe_url out http
+  url="$BAGEVM_CHANGE_URL"
+  safe_url="$(_mask_change_url "$url")"
+
+  log "↻ 触发 BageVM 换 IP：${safe_url}"
+
+  out="$(curl -sS --connect-timeout "$CHANGE_IP_CONNECT_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" \
+    -w ' HTTP_STATUS=%{http_code}' "$url" 2>&1 || true)"
+  out="$(printf '%s' "$out" | tr '\r\n' ' ' | cut -c1-500)"
+  http="$(printf '%s' "$out" | sed -nE 's/.*HTTP_STATUS=([0-9]+).*/\1/p')"
+
+  log "↩︎ BageVM 换 IP 接口返回：${out:-empty}"
+
+  # 浏览器能访问 / curl 能返回 2xx，就认为已经把换 IP 请求送出。
+  if [ -n "$http" ] && [ "$http" -ge 200 ] && [ "$http" -lt 300 ]; then
+    return 0
+  fi
+  return 1
+}
+
+call_change_ip(){
+  local before n=0
+  before="$(_get_wan_ip || echo "")"
+
+  if [ -n "$before" ]; then
+    log "🚀 执行换 IP（主机=${HOST_SHORT}，当前公网 IP=${before}）..."
+  else
+    log "🚀 执行换 IP（主机=${HOST_SHORT}，当前公网 IP 未知）..."
+  fi
+
+  if _trigger_change_ip; then
+    [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" 2>/dev/null || echo 0)"
+    n=$((n+1))
+    echo "$n" > "$CHANGE_CNT_FILE"
+    log "✅ 已发送 BageVM 换 IP请求，不再访问 192.168.*，不再等待 90 秒验证（累计 $n 次）"
+    return 0
+  fi
+
+  log "⚠️ BageVM 换 IP请求失败，请直接测试：curl \"$(_mask_change_url "$BAGEVM_CHANGE_URL")\""
+  return 1
+}
+
+
+# 从 ping 输出里只提取数字丢包率：0、20、40、60、80、100 等。
 # 解析不到时按 100 处理，避免 ping 异常时漏换 IP。
 get_packet_loss(){
   local output="${1:-}" loss
   loss="$({
-    printf '%s\n' "$output" | awk '
+    printf '%s
+' "$output" | awk '
       /packet loss/ {
         for (i=1; i<=NF; i++) {
           if ($i ~ /^[0-9]+(\.[0-9]+)?%$/) {
@@ -98,83 +155,19 @@ get_packet_loss(){
   if [ -z "$loss" ]; then
     loss="100"
   fi
-  printf '%s\n' "$loss"
+  printf '%s
+' "$loss"
 }
 
-is_loss_100(){
-  local loss="${1:-100}"
-  awk -v loss="$loss" 'BEGIN { exit !((loss + 0) >= 100) }'
+is_loss_over_threshold(){
+  local loss="${1:-100}" threshold="${2:-${LOSS_THRESHOLD:-80}}"
+  awk -v loss="$loss" -v threshold="$threshold" 'BEGIN { exit !((loss + 0) >= (threshold + 0)) }'
 }
 
-# ========== 换 IP ==========
-# BageVM Hinet restip 接口。不要把 apikey 写进公开 GitHub，运行前用环境变量传入：
-#   export BAGEVM_APIKEY='你的 BageVM apikey'
-BAGEVM_VMIP="${BAGEVM_VMIP:-10.92.2.30}"
-BAGEVM_APIKEY="${BAGEVM_APIKEY:-}"
-CHANGE_IP_CONNECT_TIMEOUT="${CHANGE_IP_CONNECT_TIMEOUT:-3}"
-CHANGE_IP_HTTP_TIMEOUT="${CHANGE_IP_HTTP_TIMEOUT:-15}"
-
-_mask_change_url(){
-  printf '%s' "$1" | sed -E 's/(apikey=)[^&]+/\1****/g'
-}
-
-_change_ip_target_url(){
-  if [ -z "${BAGEVM_APIKEY:-}" ]; then
-    log "❌ BAGEVM_APIKEY 为空，无法触发 BageVM 换 IP"
-    return 1
-  fi
-
-  printf 'https://www.bagevm.com/index.php?m=hinet&vmip=%s&apikey=%s&action=restip' \
-    "$BAGEVM_VMIP" "$BAGEVM_APIKEY"
-}
-
-_trigger_change_ip(){
-  local url safe_url out http
-  url="$(_change_ip_target_url)" || return 1
-  safe_url="$(_mask_change_url "$url")"
-
-  log "↻ 触发 BageVM 换 IP：vmip=${BAGEVM_VMIP} -> ${safe_url}"
-
-  out="$(curl -sS --connect-timeout "$CHANGE_IP_CONNECT_TIMEOUT" --max-time "$CHANGE_IP_HTTP_TIMEOUT" \
-    -w ' HTTP_STATUS=%{http_code}' "$url" 2>&1 || true)"
-  out="$(printf '%s' "$out" | tr '\r\n' ' ' | cut -c1-500)"
-  http="$(printf '%s' "$out" | sed -nE 's/.*HTTP_STATUS=([0-9]+).*/\1/p')"
-
-  log "↩︎ BageVM 换 IP 接口返回：${out:-empty}"
-
-  # HTTP 2xx 视为请求已送达；实际是否成功以接口返回内容为准。
-  if [ -n "$http" ] && [ "$http" -ge 200 ] && [ "$http" -lt 300 ]; then
-    return 0
-  fi
-  return 1
-}
-
-call_change_ip(){
-  local before n=0
-  before="$(_get_wan_ip || echo "")"
-
-  if [ -n "$before" ]; then
-    log "🚀 执行换 IP（主机=${HOST_SHORT}，当前公网 IP=${before}，BageVM VMIP=${BAGEVM_VMIP}）..."
-  else
-    log "🚀 执行换 IP（主机=${HOST_SHORT}，当前公网 IP 未知，BageVM VMIP=${BAGEVM_VMIP}）..."
-  fi
-
-  if _trigger_change_ip; then
-    [ -f "$CHANGE_CNT_FILE" ] && n="$(cat "$CHANGE_CNT_FILE" 2>/dev/null || echo 0)"
-    n=$((n+1))
-    echo "$n" > "$CHANGE_CNT_FILE"
-    log "✅ 已发送 BageVM 换 IP 请求，不再等待 90 秒验证（累计 $n 次）"
-    return 0
-  fi
-
-  log "⚠️ BageVM 换 IP 请求失败，请检查 BAGEVM_APIKEY / BAGEVM_VMIP / 网络连通性"
-  return 1
-}
-
-
-# ========== 检测：丢包率 100% 就换 IP ==========
+# ========== 检测：丢包率达到 80% 就换 IP ==========
 check_ip_reachable(){
-  local wan_ip ping_result packet_loss new_wan_ip new_ping_result new_packet_loss
+  local wan_ip ping_result packet_loss new_wan_ip new_ping_result new_packet_loss threshold
+  threshold="${LOSS_THRESHOLD:-80}"
 
   wan_ip="$(_get_wan_ip || echo "unknown")"
   log "🔍 当前公网 IP：${wan_ip}"
@@ -184,9 +177,9 @@ check_ip_reachable(){
   packet_loss="$(get_packet_loss "$ping_result")"
   log "📉 当前丢包率：${packet_loss}%"
 
-  if is_loss_100 "$packet_loss"; then
-    log "❌ 丢包率 100%，立即触发换 IP..."
-    call_change_ip || log "⚠️ 调用换 IP 失败"
+  if is_loss_over_threshold "$packet_loss" "$threshold"; then
+    log "❌ 丢包率 ${packet_loss}% 已达到 ${threshold}%，立即触发换 IP..."
+    call_change_ip || log "⚠️ 调用换 IP失败"
 
     log "⏳ 等待 10 秒后重新检测..."
     sleep 10
@@ -194,20 +187,21 @@ check_ip_reachable(){
     new_wan_ip="$(_get_wan_ip || echo "unknown")"
     new_ping_result="$(ping -q -c "$PING_COUNT" -W "$PING_TIMEOUT" -i "$PING_INTERVAL" "$PING_TARGET" 2>&1 || true)"
     new_packet_loss="$(get_packet_loss "$new_ping_result")"
-    log "📉 换 IP 后公网 IP：${new_wan_ip}，丢包率：${new_packet_loss}%"
+    log "📉 换 IP后公网 IP：${new_wan_ip}，丢包率：${new_packet_loss}%"
 
-    if is_loss_100 "$new_packet_loss"; then
-      log "🚫 换 IP 后仍是 100% 丢包，等待下次循环继续换"
+    if is_loss_over_threshold "$new_packet_loss" "$threshold"; then
+      log "🚫 换 IP后丢包率仍达到 ${threshold}% 或以上，等待下次循环继续换"
       return 1
     fi
 
-    log "✅ 换 IP 后检测恢复"
+    log "✅ 换 IP后检测恢复"
     return 0
   fi
 
-  log "✅ 丢包率不是 100%，不换 IP"
+  log "✅ 丢包率低于 ${threshold}%，不换 IP"
   return 0
 }
+
 
 # ========== Cloudflare 统一 API ==========
 CF_API_BASE="https://api.cloudflare.com/client/v4"
@@ -366,13 +360,13 @@ sync_dns_if_needed(){
 # ========== 主循环 ==========
 log "🚀 启动 DDNS（主机=${HOST_FULL} / VPS_ID=${VPS_ID}）"
 log "记录=${CF_RECORD_NAME} 类型=${CF_RECORD_TYPE} TTL=${CFTTL}s PROXIED=${PROXIED}"
-log "检测目标=${PING_TARGET}；规则：丢包率 100% 就换 IP"
+log "检测目标=${PING_TARGET}；规则：丢包率达到 ${LOSS_THRESHOLD:-80}% 就换 IP"
 
 while true; do
   if check_ip_reachable; then
     sync_dns_if_needed || true
   else
-    # 即使新 IP 仍 100% 丢包，也尝试同步 DNS，方便切 IP 后直接可用
+    # 即使新 IP 仍达到阈值丢包，也尝试同步 DNS，方便切 IP 后直接可用
     sync_dns_if_needed || true
   fi
 
