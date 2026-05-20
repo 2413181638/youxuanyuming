@@ -18,7 +18,7 @@ API_KEY="${BAGEDDNS_API_KEY:-}"
 API_URL="${BAGEDDNS_API_URL:-https://www.bagevm.com/index.php?m=hinet}"
 API_ACTION="${BAGEDDNS_API_ACTION:-restip}"
 CHECK_INTERVAL="${BAGEDDNS_CHECK_INTERVAL:-180}"
-PING_TARGET="${BAGEDDNS_PING_TARGET:-223.5.5.5}"
+PING_TARGET="${BAGEDDNS_PING_TARGET:-8.138.53.208}"
 PING_COUNT="${BAGEDDNS_PING_COUNT:-5}"
 PING_WAIT="${BAGEDDNS_PING_WAIT:-2}"
 PING_INTERVAL="${BAGEDDNS_PING_INTERVAL:-0.2}"
@@ -38,7 +38,7 @@ usage() {
   --api-url <url>            设置 API 地址
   --action <action>          设置 API 动作, 默认: restip
   --check-interval <秒>      检测间隔, 默认: 180
-  --ping-target <host>       Ping 目标, 默认: 223.5.5.5
+  --ping-target <host>       Ping 目标, 默认: 8.138.53.208
   --ping-count <次数>        Ping 次数, 默认: 5
   --ping-wait <秒>           Ping 超时, 默认: 2
   --ping-interval <秒>       Ping 间隔, 默认: 0.2
@@ -217,7 +217,7 @@ API_KEY="${API_KEY:-}"
 API_URL="${API_URL:-https://www.bagevm.com/index.php?m=hinet}"
 API_ACTION="${API_ACTION:-restip}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-180}"
-PING_TARGET="${PING_TARGET:-223.5.5.5}"
+PING_TARGET="${PING_TARGET:-8.138.53.208}"
 PING_COUNT="${PING_COUNT:-5}"
 PING_WAIT="${PING_WAIT:-2}"
 PING_INTERVAL="${PING_INTERVAL:-0.2}"
