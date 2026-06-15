@@ -183,20 +183,29 @@ def score(row: dict) -> Tuple[float, float, str]:
     return (float(row.get("loss", 100.0)), float(row.get("avg", 9999.0)), row.get("ip", ""))
 
 
-def local_probe_ip(ip: str, port: int = 443, timeout: float = 4.0) -> dict:
-    """GitHub Actions 容器本地出口预检：TCP connect + curl --resolve HTTPS。
+def local_probe_ip(ip: str, port: int = 443, timeout: float = 4.0, attempts: int = 5) -> dict:
+    """GitHub Actions 容器本地出口 TCP-Ping + curl --resolve HTTPS。
 
-    这不是国内三网测试，只用于剔除容器出口下不可 TCP/HTTPS 访问的候选 IP。
+    这是真实 TCP connect 测试，但源站是 GitHub Actions 容器出口，不是大陆三网出口。
     """
-    out = {"ip": ip, "local_tcp_ok": False, "local_tcp_ms": 9999.0, "local_https_ok": False, "local_https_ms": 9999.0}
-    start = time.time()
-    try:
-        s = socket.create_connection((ip, port), timeout=timeout)
-        s.close()
+    out = {"ip": ip, "local_tcp_ok": False, "local_tcp_ms": 9999.0, "local_tcp_loss": 100.0, "local_https_ok": False, "local_https_ms": 9999.0}
+    samples = []
+    failures = 0
+    for _ in range(max(1, attempts)):
+        start = time.time()
+        try:
+            s = socket.create_connection((ip, port), timeout=timeout)
+            s.close()
+            samples.append((time.time() - start) * 1000)
+        except Exception as e:
+            failures += 1
+            out["local_error"] = type(e).__name__
+    if samples:
         out["local_tcp_ok"] = True
-        out["local_tcp_ms"] = round((time.time() - start) * 1000, 2)
-    except Exception as e:
-        out["local_error"] = type(e).__name__
+        out["local_tcp_ms"] = round(sum(samples) / len(samples), 2)
+        out["local_tcp_min_ms"] = round(min(samples), 2)
+        out["local_tcp_loss"] = round(failures * 100 / max(1, attempts), 2)
+    else:
         return out
 
     # 用 SNI/Host 真实挂到 CF IP 测 HTTPS，不校验证书链之外的内容；失败不直接判死，TCP OK 仍可进入 Globalping。
@@ -227,7 +236,7 @@ def local_prefilter(candidates: List[str], args) -> Tuple[List[str], List[dict]]
     print(f"[INFO] local container precheck: {len(candidates)} IPs, port={args.port}")
     rows: List[dict] = []
     with ThreadPoolExecutor(max_workers=max(1, args.local_workers)) as ex:
-        futs = {ex.submit(local_probe_ip, ip, args.port, args.local_timeout): ip for ip in candidates}
+        futs = {ex.submit(local_probe_ip, ip, args.port, args.local_timeout, args.local_attempts): ip for ip in candidates}
         for fut in as_completed(futs):
             row = fut.result()
             rows.append(row)
@@ -272,6 +281,8 @@ def main() -> int:
     ap.add_argument("--local-validate", action=argparse.BooleanOptionalAction, default=os.getenv("LOCAL_VALIDATE", "1") not in ("0", "false", "False", "no"))
     ap.add_argument("--local-workers", type=int, default=int(os.getenv("LOCAL_WORKERS", "16")))
     ap.add_argument("--local-timeout", type=float, default=float(os.getenv("LOCAL_TIMEOUT", "4")))
+    ap.add_argument("--local-attempts", type=int, default=int(os.getenv("LOCAL_ATTEMPTS", "5")))
+    ap.add_argument("--local-only", action=argparse.BooleanOptionalAction, default=os.getenv("LOCAL_ONLY", "1") not in ("0", "false", "False", "no"))
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -283,6 +294,33 @@ def main() -> int:
     candidates, local_rows = local_prefilter(candidates, args)
     candidates = candidates[:args.candidate_limit]
     print(f"[INFO] candidates_after_local_precheck={len(candidates)}")
+
+    if args.local_only and local_rows:
+        local_ok = [r for r in local_rows if r.get("local_tcp_ok") and r.get("local_tcp_loss", 100) < args.loss_limit]
+        local_ok.sort(key=lambda r: (not r.get("local_https_ok"), r.get("local_tcp_loss", 100.0), r.get("local_tcp_ms", 9999.0), r.get("local_https_ms", 9999.0)))
+        ips = [r["ip"] for r in local_ok]
+        if len(ips) < args.min_count:
+            print(f"[ERROR] local-only tcpping passed only {len(ips)} IPs")
+            return 3
+        plans = {
+            "cfip": ips[:args.max_count],
+            "cmcc": ips[0:args.max_count],
+            "ctcc": ips[args.max_count:args.max_count*2] or ips[:args.max_count],
+            "cucc": ips[args.max_count*2:args.max_count*3] or ips[:args.max_count],
+        }
+        report = {"generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "mode": "github_runner_local_tcpping", "localPrecheck": local_rows, "selected": {}}
+        for group, selected in plans.items():
+            selected = selected[:args.max_count]
+            if len(selected) < args.min_count:
+                selected = ips[:min(args.max_count, len(ips))]
+            report["selected"][OUTPUTS[group]] = selected
+            if not args.dry_run:
+                write_list(OUTPUTS[group], selected)
+            print(f"[SELECT-LOCAL] {OUTPUTS[group]} {len(selected)} -> {selected}")
+        reports = ROOT / "reports"
+        reports.mkdir(exist_ok=True)
+        (reports / "carrier-select-latest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        return 0
 
     all_results: Dict[str, List[dict]] = {k: [] for k in OUTPUTS}
     for group in ["cfip", "cmcc", "ctcc", "cucc"]:
