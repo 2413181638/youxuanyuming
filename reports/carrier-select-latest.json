@@ -1,1115 +1,855 @@
 {
-  "generatedAt": "2026-06-15T07:28:05Z",
+  "generatedAt": "2026-06-15T07:35:00Z",
+  "mode": "github_runner_local_tcpping",
   "localPrecheck": [
+    {
+      "ip": "104.17.127.110",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.27,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 111.73,
+      "local_tcp_min_ms": 1.85,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.208.16",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.25,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 112.18,
+      "local_tcp_min_ms": 2.44,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.37.7",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.98,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 122.43,
+      "local_tcp_min_ms": 2.27,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.40.189",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.71,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 127.71,
+      "local_tcp_min_ms": 1.9,
+      "local_https_code": 200
+    },
     {
       "ip": "104.17.167.124",
       "local_tcp_ok": true,
-      "local_tcp_ms": 3.71,
+      "local_tcp_ms": 3.35,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 140.97,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.18.40.163",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 10.06,
-      "local_https_ok": true,
-      "local_https_ms": 139.36,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.16.232.223",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 2.55,
-      "local_https_ok": true,
-      "local_https_ms": 171.13,
+      "local_https_ms": 115.91,
+      "local_tcp_min_ms": 2.45,
       "local_https_code": 200
     },
     {
       "ip": "104.18.43.248",
       "local_tcp_ok": true,
-      "local_tcp_ms": 9.67,
+      "local_tcp_ms": 3.64,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 161.51,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.16.157.139",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 4.12,
-      "local_https_ok": true,
-      "local_https_ms": 174.52,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.18.228.35",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 7.9,
-      "local_https_ok": true,
-      "local_https_ms": 143.98,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.16.23.216",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 3.07,
-      "local_https_ok": true,
-      "local_https_ms": 191.2,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.17.178.181",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 2.24,
-      "local_https_ok": true,
-      "local_https_ms": 160.24,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.17.208.1",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 2.22,
-      "local_https_ok": true,
-      "local_https_ms": 183.57,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.16.241.229",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 3.81,
-      "local_https_ok": true,
-      "local_https_ms": 200.28,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.18.46.111",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 22.47,
-      "local_https_ok": true,
-      "local_https_ms": 190.41,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.18.43.246",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 3.14,
-      "local_https_ok": true,
-      "local_https_ms": 234.83,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.17.127.110",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 3.6,
-      "local_https_ok": true,
-      "local_https_ms": 243.13,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.18.44.151",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 9.91,
-      "local_https_ok": true,
-      "local_https_ms": 236.14,
+      "local_https_ms": 126.42,
+      "local_tcp_min_ms": 2.78,
       "local_https_code": 200
     },
     {
       "ip": "104.17.102.186",
       "local_tcp_ok": true,
-      "local_tcp_ms": 13.58,
+      "local_tcp_ms": 3.91,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 236.0,
+      "local_https_ms": 119.76,
+      "local_tcp_min_ms": 2.88,
       "local_https_code": 200
     },
     {
-      "ip": "104.18.37.133",
+      "ip": "104.16.23.216",
       "local_tcp_ok": true,
-      "local_tcp_ms": 19.4,
+      "local_tcp_ms": 3.29,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 236.42,
+      "local_https_ms": 126.77,
+      "local_tcp_min_ms": 1.62,
       "local_https_code": 200
     },
     {
-      "ip": "104.25.105.1",
+      "ip": "104.18.33.198",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.0,
+      "local_tcp_ms": 3.35,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 136.62,
+      "local_https_ms": 134.26,
+      "local_tcp_min_ms": 1.87,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.40.163",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.37,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 134.94,
+      "local_tcp_min_ms": 2.12,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.16.232.223",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.99,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 140.25,
+      "local_tcp_min_ms": 2.66,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.16.241.229",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.4,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 148.87,
+      "local_tcp_min_ms": 2.6,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.24.106",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.06,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 158.63,
+      "local_tcp_min_ms": 1.75,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.17.34",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.39,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 150.89,
+      "local_tcp_min_ms": 2.05,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.190.127",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.52,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 151.68,
+      "local_tcp_min_ms": 2.38,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.46.37",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.96,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 149.39,
+      "local_tcp_min_ms": 2.62,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.19.159.172",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.88,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 53.25,
+      "local_tcp_min_ms": 2.18,
       "local_https_code": 200
     },
     {
       "ip": "104.19.54.144",
       "local_tcp_ok": true,
       "local_tcp_ms": 3.31,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 144.67,
+      "local_https_ms": 77.1,
+      "local_tcp_min_ms": 2.56,
       "local_https_code": 200
     },
     {
-      "ip": "104.26.5.134",
+      "ip": "104.18.228.35",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.02,
+      "local_tcp_ms": 4.35,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 137.76,
+      "local_https_ms": 74.63,
+      "local_tcp_min_ms": 2.59,
       "local_https_code": 200
     },
     {
       "ip": "104.21.91.19",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.63,
+      "local_tcp_ms": 4.65,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 169.36,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.19.152.93",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 5.87,
-      "local_https_ok": true,
-      "local_https_ms": 191.93,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.26.4.90",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 2.46,
-      "local_https_ok": true,
-      "local_https_ms": 188.79,
+      "local_https_ms": 67.22,
+      "local_tcp_min_ms": 2.07,
       "local_https_code": 200
     },
     {
       "ip": "104.27.21.118",
       "local_tcp_ok": true,
-      "local_tcp_ms": 3.97,
+      "local_tcp_ms": 3.19,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 176.5,
-      "local_https_code": 200
-    },
-    {
-      "ip": "108.162.198.150",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 1.77,
-      "local_https_ok": true,
-      "local_https_ms": 192.35,
-      "local_https_code": 200
-    },
-    {
-      "ip": "108.162.198.201",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 1.65,
-      "local_https_ok": true,
-      "local_https_ms": 187.7,
-      "local_https_code": 200
-    },
-    {
-      "ip": "162.159.24.131",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 3.63,
-      "local_https_ok": true,
-      "local_https_ms": 179.15,
-      "local_https_code": 200
-    },
-    {
-      "ip": "162.159.35.245",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 2.75,
-      "local_https_ok": true,
-      "local_https_ms": 186.75,
+      "local_https_ms": 58.75,
+      "local_tcp_min_ms": 2.52,
       "local_https_code": 200
     },
     {
       "ip": "162.159.36.122",
       "local_tcp_ok": true,
-      "local_tcp_ms": 3.75,
+      "local_tcp_ms": 4.7,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 186.67,
+      "local_https_ms": 71.72,
+      "local_tcp_min_ms": 2.53,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.26.5.134",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.98,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 100.74,
+      "local_tcp_min_ms": 2.17,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.26.4.90",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.73,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 105.2,
+      "local_tcp_min_ms": 2.53,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.25.105.1",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.8,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 106.89,
+      "local_tcp_min_ms": 1.93,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.24.131",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.4,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 89.2,
+      "local_tcp_min_ms": 2.51,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.58.65",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.28,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 74.96,
+      "local_tcp_min_ms": 2.4,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.61.183",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.96,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 75.33,
+      "local_tcp_min_ms": 1.84,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.136.89",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.26,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 100.51,
+      "local_tcp_min_ms": 1.65,
+      "local_https_code": 200
+    },
+    {
+      "ip": "172.64.32.156",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.28,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 86.62,
+      "local_tcp_min_ms": 2.43,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.140.85",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.12,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 109.77,
+      "local_tcp_min_ms": 2.45,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.26.10.221",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.24,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 81.79,
+      "local_tcp_min_ms": 1.94,
+      "local_https_code": 200
+    },
+    {
+      "ip": "108.162.198.150",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 20.15,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 150.89,
+      "local_tcp_min_ms": 18.92,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.44.214",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 19.72,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 131.54,
+      "local_tcp_min_ms": 16.14,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.71",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.92,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 98.31,
+      "local_tcp_min_ms": 1.85,
+      "local_https_code": 200
+    },
+    {
+      "ip": "172.64.48.226",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.49,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 105.5,
+      "local_tcp_min_ms": 2.57,
       "local_https_code": 200
     },
     {
       "ip": "162.159.38.144",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.06,
+      "local_tcp_ms": 20.03,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 189.02,
+      "local_https_ms": 148.44,
+      "local_tcp_min_ms": 16.49,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.109",
+      "ip": "162.159.39.240",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.47,
+      "local_tcp_ms": 19.81,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 140.45,
+      "local_https_ms": 133.76,
+      "local_tcp_min_ms": 16.23,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.183",
+      "ip": "162.159.45.88",
       "local_tcp_ok": true,
-      "local_tcp_ms": 1.86,
+      "local_tcp_ms": 19.02,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 186.9,
+      "local_https_ms": 146.8,
+      "local_tcp_min_ms": 16.36,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.108",
+      "ip": "173.245.49.19",
       "local_tcp_ok": true,
-      "local_tcp_ms": 4.12,
+      "local_tcp_ms": 3.51,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 186.7,
+      "local_https_ms": 55.95,
+      "local_tcp_min_ms": 2.68,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.52",
+      "ip": "173.245.58.159",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.59,
+      "local_tcp_ms": 2.38,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 142.74,
+      "local_https_ms": 104.27,
+      "local_tcp_min_ms": 2.03,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.49.222",
+      "ip": "173.245.49.207",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.83,
+      "local_tcp_ms": 3.92,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 136.41,
+      "local_https_ms": 106.26,
+      "local_tcp_min_ms": 2.01,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.170",
+      "ip": "172.64.52.93",
       "local_tcp_ok": true,
-      "local_tcp_ms": 4.71,
+      "local_tcp_ms": 18.52,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 180.98,
+      "local_https_ms": 139.94,
+      "local_tcp_min_ms": 17.03,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.31",
+      "ip": "173.245.49.240",
       "local_tcp_ok": true,
-      "local_tcp_ms": 5.67,
+      "local_tcp_ms": 5.54,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 171.48,
+      "local_https_ms": 118.52,
+      "local_tcp_min_ms": 2.51,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.49.6",
+      "ip": "172.64.52.127",
       "local_tcp_ok": true,
-      "local_tcp_ms": 5.6,
+      "local_tcp_ms": 17.98,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 167.23,
+      "local_https_ms": 155.64,
+      "local_tcp_min_ms": 14.43,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.157",
+      "ip": "173.245.49.79",
       "local_tcp_ok": true,
-      "local_tcp_ms": 1.92,
+      "local_tcp_ms": 4.15,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 166.09,
+      "local_https_ms": 126.44,
+      "local_tcp_min_ms": 2.31,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.49.62",
+      "ip": "173.245.58.169",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.15,
+      "local_tcp_ms": 2.64,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 182.16,
+      "local_https_ms": 111.73,
+      "local_tcp_min_ms": 1.87,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.156",
+      "ip": "173.245.49.140",
       "local_tcp_ok": true,
-      "local_tcp_ms": 5.91,
+      "local_tcp_ms": 2.39,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 190.21,
+      "local_https_ms": 121.36,
+      "local_tcp_min_ms": 1.61,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.49.109",
+      "ip": "173.245.49.202",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.9,
+      "local_tcp_ms": 2.39,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 181.34,
+      "local_https_ms": 121.42,
+      "local_tcp_min_ms": 2.01,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.49.235",
+      "ip": "173.245.58.134",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.14,
+      "local_tcp_ms": 3.27,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 183.1,
+      "local_https_ms": 118.73,
+      "local_tcp_min_ms": 2.54,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.99",
+      "ip": "173.245.58.186",
       "local_tcp_ok": true,
-      "local_tcp_ms": 2.53,
+      "local_tcp_ms": 2.87,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 159.22,
+      "local_https_ms": 119.88,
+      "local_tcp_min_ms": 1.71,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.58.123",
+      "ip": "172.67.66.56",
       "local_tcp_ok": true,
-      "local_tcp_ms": 4.14,
+      "local_tcp_ms": 2.64,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 202.48,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.19.207.216",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 3.81,
-      "local_https_ok": true,
-      "local_https_ms": 159.1,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.17.135.91",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 4.82,
-      "local_https_ok": true,
-      "local_https_ms": 204.09,
-      "local_https_code": 200
-    },
-    {
-      "ip": "173.245.49.82",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 4.13,
-      "local_https_ok": true,
-      "local_https_ms": 138.97,
-      "local_https_code": 200
-    },
-    {
-      "ip": "173.245.49.234",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 9.4,
-      "local_https_ok": true,
-      "local_https_ms": 182.93,
-      "local_https_code": 200
-    },
-    {
-      "ip": "173.245.58.14",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 10.82,
-      "local_https_ok": true,
-      "local_https_ms": 189.83,
-      "local_https_code": 200
-    },
-    {
-      "ip": "173.245.49.96",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 5.87,
-      "local_https_ok": true,
-      "local_https_ms": 205.7,
-      "local_https_code": 200
-    },
-    {
-      "ip": "188.114.97.144",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 2.92,
-      "local_https_ok": true,
-      "local_https_ms": 151.8,
-      "local_https_code": 200
-    },
-    {
-      "ip": "162.159.134.225",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 3.12,
-      "local_https_ok": true,
-      "local_https_ms": 165.35,
-      "local_https_code": 200
-    },
-    {
-      "ip": "173.245.58.115",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 2.4,
-      "local_https_ok": true,
-      "local_https_ms": 169.85,
-      "local_https_code": 200
-    },
-    {
-      "ip": "173.245.58.41",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 1.89,
-      "local_https_ok": true,
-      "local_https_ms": 100.07,
-      "local_https_code": 200
-    },
-    {
-      "ip": "104.17.144.68",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 5.41,
-      "local_https_ok": true,
-      "local_https_ms": 89.6,
-      "local_https_code": 200
-    },
-    {
-      "ip": "173.245.49.205",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 4.79,
-      "local_https_ok": true,
-      "local_https_ms": 83.24,
-      "local_https_code": 200
-    },
-    {
-      "ip": "173.245.49.41",
-      "local_tcp_ok": true,
-      "local_tcp_ms": 2.81,
-      "local_https_ok": true,
-      "local_https_ms": 146.28,
+      "local_https_ms": 123.48,
+      "local_tcp_min_ms": 2.36,
       "local_https_code": 200
     },
     {
       "ip": "173.245.49.231",
       "local_tcp_ok": true,
-      "local_tcp_ms": 6.47,
+      "local_tcp_ms": 3.31,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 140.42,
+      "local_https_ms": 137.89,
+      "local_tcp_min_ms": 2.5,
       "local_https_code": 200
     },
     {
-      "ip": "173.245.49.148",
+      "ip": "173.245.58.124",
       "local_tcp_ok": true,
-      "local_tcp_ms": 5.55,
+      "local_tcp_ms": 2.74,
+      "local_tcp_loss": 0.0,
       "local_https_ok": true,
-      "local_https_ms": 108.55,
+      "local_https_ms": 111.23,
+      "local_tcp_min_ms": 1.74,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.117",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.58,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 112.19,
+      "local_tcp_min_ms": 2.35,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.105",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.89,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 103.89,
+      "local_tcp_min_ms": 2.82,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.18",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.17,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 90.47,
+      "local_tcp_min_ms": 2.33,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.122.66",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.82,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 106.5,
+      "local_tcp_min_ms": 2.18,
+      "local_https_code": 200
+    },
+    {
+      "ip": "198.41.194.162",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.57,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 99.31,
+      "local_tcp_min_ms": 2.65,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.203",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.4,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 106.7,
+      "local_tcp_min_ms": 2.76,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.185.26",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.35,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 131.88,
+      "local_tcp_min_ms": 2.72,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.55",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.32,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 95.53,
+      "local_tcp_min_ms": 1.87,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.154",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.94,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 124.28,
+      "local_tcp_min_ms": 1.77,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.217",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.57,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 103.05,
+      "local_tcp_min_ms": 2.27,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.141",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.68,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 138.22,
+      "local_tcp_min_ms": 2.63,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.119",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.92,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 115.34,
+      "local_tcp_min_ms": 2.72,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.158",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.97,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 128.32,
+      "local_tcp_min_ms": 1.95,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.58",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.61,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 141.24,
+      "local_tcp_min_ms": 1.94,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.215",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.15,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 133.74,
+      "local_tcp_min_ms": 2.78,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.78",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.27,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 136.59,
+      "local_tcp_min_ms": 3.67,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.87",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.59,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 118.13,
+      "local_tcp_min_ms": 2.22,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.131",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.94,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 114.14,
+      "local_tcp_min_ms": 2.01,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.183",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.43,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 59.14,
+      "local_tcp_min_ms": 1.94,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.90",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.62,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 63.53,
+      "local_tcp_min_ms": 1.94,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.143",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.56,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 75.67,
+      "local_tcp_min_ms": 2.75,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.2",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.46,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 84.96,
+      "local_tcp_min_ms": 1.98,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.71",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.72,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 54.17,
+      "local_tcp_min_ms": 2.04,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.44",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.57,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 58.7,
+      "local_tcp_min_ms": 1.92,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.84",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.51,
+      "local_tcp_loss": 0.0,
+      "local_https_ok": true,
+      "local_https_ms": 54.49,
+      "local_tcp_min_ms": 2.55,
       "local_https_code": 200
     },
     {
       "ip": "104.20.255.53",
       "local_tcp_ok": false,
       "local_tcp_ms": 9999.0,
+      "local_tcp_loss": 100.0,
       "local_https_ok": false,
       "local_https_ms": 9999.0,
       "local_error": "TimeoutError"
     }
   ],
-  "results": {
-    "cfip": [
-      {
-        "ip": "173.245.49.205",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 166.687,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shenzhen/Hangzhou Alibaba Advertising"
-        ],
-        "id": "2L5cnYVQSvmH0oURm00020aC6"
-      },
-      {
-        "ip": "104.17.144.68",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 156.071,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2Cc719K0nXp3Lw4ld00020aC6"
-      },
-      {
-        "ip": "173.245.58.41",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 43.184,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2hTPVTeSyuuofOcfR00020aC6"
-      },
-      {
-        "ip": "173.245.49.148",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 153.432,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
-        ],
-        "id": "2vWyWLSrX96dUPZ4300020aC7"
-      },
-      {
-        "ip": "173.245.49.222",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 193.795,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2GuvMfIaPCJRXfM3n00020aC7"
-      },
-      {
-        "ip": "104.25.105.1",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 43.954,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2dU7GZtYkDNbgsx5E00020aC7"
-      },
-      {
-        "ip": "173.245.49.82",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 480.814,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
-        ],
-        "id": "2eCoalTOaWSGhrK5N00020aC7"
-      },
-      {
-        "ip": "104.26.5.134",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 84.48,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2JlhoqNvZSh964sIr00020aC7"
-      },
-      {
-        "ip": "104.18.40.163",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 59.182,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shenzhen/Hangzhou Alibaba Advertising"
-        ],
-        "id": "2DRbvtVNeJGDfgjtr00020aC7"
-      },
-      {
-        "ip": "173.245.49.231",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 519.387,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/Hangzhou Alibaba Advertising"
-        ],
-        "id": "2EDrIB3ME0CLdO5ex00020aC7"
-      },
-      {
-        "ip": "173.245.58.109",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 175.577,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2RRzkMG5UOXuFLrhM00020aC7"
-      },
-      {
-        "ip": "104.17.167.124",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 45.293,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2tOFz1p35lyd6u8t800020aC7"
-      }
-    ],
-    "cmcc": [
-      {
-        "ip": "173.245.49.205",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 194.143,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2IZO268aNsqDICQLR00020aC7"
-      },
-      {
-        "ip": "104.17.144.68",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 50.937,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2oWLPYCU9kVALAA7s00020aC7"
-      },
-      {
-        "ip": "173.245.58.41",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 538.868,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "20fZ78kw946uftA9x00020aC7"
-      },
-      {
-        "ip": "173.245.49.148",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 195.857,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2jmedNBXNHlWuGdYT00020aC7"
-      },
-      {
-        "ip": "104.25.105.1",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 531.055,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2eWvNVbSf1tnsDgTk00020aC7"
-      },
-      {
-        "ip": "173.245.49.222",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 202.501,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2Qu2aFarYeKkympwV00020aC7"
-      },
-      {
-        "ip": "104.26.5.134",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 192.174,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2AakUY4i79vCwVMEr00020aC7"
-      },
-      {
-        "ip": "173.245.49.82",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 192.467,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2g3RdIhVYgBGRsJpV00020aC7"
-      },
-      {
-        "ip": "104.18.40.163",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 51.051,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2SJQI9aZBHr54V6Y700020aC7"
-      },
-      {
-        "ip": "173.245.49.231",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 188.709,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2DZ4Bd5n4uzwaeV4f00020aC7"
-      },
-      {
-        "ip": "173.245.58.109",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 201.536,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2g3tF9Ax8kMm6PCvM00020aC7"
-      },
-      {
-        "ip": "104.17.167.124",
-        "group": "cmcc",
-        "magic": "China Mobile",
-        "avg": 51.915,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2khSuzsOYgSrDAI2l00020aC7"
-      }
-    ],
-    "ctcc": [
-      {
-        "ip": "104.17.144.68",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 51.912,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2I7fT4UVubfXFRkpY00020aC7"
-      },
-      {
-        "ip": "173.245.49.205",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 176.501,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2jyMFPJEkcAlfe0VU00020aC7"
-      },
-      {
-        "ip": "173.245.58.41",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 50.845,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shenzhen/Hangzhou Alibaba Advertising"
-        ],
-        "id": "2njDbz5x3kw2kUCVj00020aC7"
-      },
-      {
-        "ip": "173.245.49.222",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 184.261,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/Hangzhou Alibaba Advertising"
-        ],
-        "id": "2wr0DlF06iklR7BfG00020aC7"
-      },
-      {
-        "ip": "173.245.49.148",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 211.36,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2MrbyDoj9OYBMhtur00020aC7"
-      },
-      {
-        "ip": "104.26.5.134",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 192.631,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Mobile Communicaitons"
-        ],
-        "id": "2ohBAOECH039UAA7X00020aC7"
-      },
-      {
-        "ip": "104.25.105.1",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 134.523,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
-        ],
-        "id": "24jEVhWp14EbwBrvp00020aC7"
-      },
-      {
-        "ip": "173.245.49.82",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 161.965,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2Z22ObexeXd4z8tWo00020aC7"
-      },
-      {
-        "ip": "104.18.40.163",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 174.53,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2XCdbskfw8p1GHkOE00020aC7"
-      },
-      {
-        "ip": "173.245.49.231",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 176.315,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2xYja02gJMousdU5w00020aC7"
-      },
-      {
-        "ip": "173.245.58.109",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 85.633,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
-        ],
-        "id": "2KDB5DBigMgXokMaI00020aC7"
-      },
-      {
-        "ip": "104.17.167.124",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 160.215,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
-        ],
-        "id": "2ljK7SEv5bdJ67W4D00020aC7"
-      }
-    ],
-    "cucc": [
-      {
-        "ip": "104.17.144.68",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 197.106,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2SB3udRxjiRcYeLuB00020aC7"
-      },
-      {
-        "ip": "173.245.58.41",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 163.134,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2cZzJDXehaxdxKjzM00020aC7"
-      },
-      {
-        "ip": "173.245.49.205",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 235.303,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2Oro7mpBrtwAdERoD00020aC7"
-      },
-      {
-        "ip": "104.25.105.1",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 205.808,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2aVGrfjWp31HsOwiO00020aC7"
-      },
-      {
-        "ip": "173.245.49.222",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 213.069,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2Tl1OvhH4EvK01CVI00020aC7"
-      },
-      {
-        "ip": "173.245.49.148",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 44.152,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2o6AyYtB6orKo7nZA00020aC7"
-      },
-      {
-        "ip": "104.26.5.134",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 42.514,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2mfM70MbWHf0LeJez00020aC7"
-      },
-      {
-        "ip": "173.245.49.82",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 234.046,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2c6xEmBhV7jAeq3UY00020aC7"
-      },
-      {
-        "ip": "104.18.40.163",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 44.493,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2VKFYw9xYPrncmfVY00020aC7"
-      },
-      {
-        "ip": "173.245.49.231",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 44.346,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2vYnUeiASpZ9lCc5N00020aC8"
-      },
-      {
-        "ip": "173.245.58.109",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 43.328,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2JySVuNAHNjsh5TuV00020aC8"
-      },
-      {
-        "ip": "104.17.167.124",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 193.883,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2hk5495qTEpg5SVP500020aC8"
-      }
-    ]
-  },
   "selected": {
     "cfip.txt": [
-      "173.245.58.41",
-      "104.25.105.1",
-      "104.17.167.124",
-      "104.18.40.163",
-      "104.26.5.134"
+      "104.26.10.221",
+      "162.159.136.89",
+      "173.245.58.159",
+      "173.245.49.140",
+      "173.245.49.202",
+      "173.245.58.183",
+      "173.245.58.2",
+      "173.245.58.90",
+      "173.245.58.169",
+      "172.67.66.56"
     ],
     "cmcc.txt": [
-      "104.17.144.68",
-      "104.18.40.163",
-      "104.17.167.124",
-      "173.245.49.231",
-      "104.26.5.134",
-      "173.245.49.82",
-      "173.245.49.205",
-      "173.245.49.148",
-      "173.245.58.109",
-      "173.245.49.222",
-      "104.25.105.1",
-      "173.245.58.41"
+      "104.26.10.221",
+      "162.159.136.89",
+      "173.245.58.159",
+      "173.245.49.140",
+      "173.245.49.202",
+      "173.245.58.183",
+      "173.245.58.2",
+      "173.245.58.90",
+      "173.245.58.169",
+      "172.67.66.56"
     ],
     "ctcc.txt": [
-      "173.245.58.41",
-      "104.17.144.68",
-      "173.245.58.109",
-      "104.25.105.1",
-      "104.17.167.124",
-      "173.245.49.82",
-      "104.18.40.163",
-      "173.245.49.231",
-      "173.245.49.205",
-      "173.245.49.222",
-      "104.26.5.134",
-      "173.245.49.148"
+      "104.18.40.189",
+      "173.245.49.71",
+      "173.245.58.124",
+      "104.18.122.66",
+      "173.245.58.186",
+      "173.245.58.71",
+      "173.245.58.154",
+      "162.159.61.183",
+      "104.18.37.7",
+      "104.17.24.106"
     ],
     "cucc.txt": [
-      "104.26.5.134",
-      "173.245.58.109",
-      "173.245.49.148",
-      "173.245.49.231",
-      "104.18.40.163"
+      "162.159.140.85",
+      "104.27.21.118",
+      "104.17.208.16",
+      "104.17.127.110",
+      "173.245.58.134",
+      "162.159.58.65",
+      "172.64.32.156",
+      "104.16.23.216",
+      "104.19.54.144",
+      "173.245.49.231"
     ]
   }
 }
