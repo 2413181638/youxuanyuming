@@ -82,6 +82,7 @@ jobs:
           LOCAL_WORKERS: "16"
           LOCAL_TIMEOUT: "4"
           LOCAL_ATTEMPTS: "5"
+          PRIORITY_DOMAINS: "saas.sin.fan"
         run: |
           python carrier_select.py
 

@@ -39,6 +39,7 @@ SESSION.trust_env = False
 API_BASE = "https://api.globalping.io/v1"
 ROOT = Path(__file__).resolve().parent
 DEFAULT_INPUTS = ["ip.txt", "ips.txt", "cfip.txt", "cmcc.txt", "ctcc.txt", "cucc.txt", "443ip.txt", "80ip.txt"]
+DEFAULT_PRIORITY_DOMAINS = ["saas.sin.fan"]
 OUTPUTS = {
     "cfip": "cfip.txt",
     "cmcc": "cmcc.txt",
@@ -94,6 +95,22 @@ def read_candidates(paths: List[str], limit: int) -> List[str]:
     random.seed(20260615)
     random.shuffle(tail)
     return (head + tail)[:limit]
+
+
+def resolve_priority_domains(domains: List[str]) -> List[str]:
+    ips: List[str] = []
+    for domain in domains:
+        domain = domain.strip().strip('.')
+        if not domain:
+            continue
+        try:
+            for item in socket.getaddrinfo(domain, 443, type=socket.SOCK_STREAM):
+                ip = str(item[4][0])
+                if is_cf_ipv4(ip):
+                    ips.append(ip)
+        except Exception as e:
+            print(f"[WARN] priority domain resolve failed {domain}: {e}")
+    return unique(ips)
 
 
 def gp_create(target: str, magic: str, port: int, packets: int, probes: int, token: Optional[str]) -> Optional[str]:
@@ -267,6 +284,7 @@ def write_list(path: str, ips: List[str]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--inputs", nargs="*", default=DEFAULT_INPUTS)
+    ap.add_argument("--priority-domains", nargs="*", default=[x for x in os.getenv("PRIORITY_DOMAINS", ",".join(DEFAULT_PRIORITY_DOMAINS)).split(',') if x.strip()])
     ap.add_argument("--candidate-limit", type=int, default=int(os.getenv("CANDIDATE_LIMIT", "60")))
     ap.add_argument("--per-group-limit", type=int, default=int(os.getenv("PER_GROUP_LIMIT", "12")))
     ap.add_argument("--min-count", type=int, default=int(os.getenv("MIN_COUNT", "5")))
@@ -286,7 +304,10 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    candidates = read_candidates(args.inputs, args.candidate_limit)
+    priority_ips = resolve_priority_domains(args.priority_domains)
+    candidates = unique(priority_ips + read_candidates(args.inputs, args.candidate_limit))[:args.candidate_limit]
+    args.priority_ips = set(priority_ips)
+    print(f"[INFO] priority_domains={args.priority_domains} priority_ips={priority_ips}")
     if not candidates:
         print("[ERROR] 没有可用 Cloudflare IPv4 候选")
         return 2
@@ -297,7 +318,7 @@ def main() -> int:
 
     if args.local_only and local_rows:
         local_ok = [r for r in local_rows if r.get("local_tcp_ok") and r.get("local_tcp_loss", 100) < args.loss_limit]
-        local_ok.sort(key=lambda r: (not r.get("local_https_ok"), r.get("local_tcp_loss", 100.0), r.get("local_tcp_ms", 9999.0), r.get("local_https_ms", 9999.0)))
+        local_ok.sort(key=lambda r: (r["ip"] not in args.priority_ips, not r.get("local_https_ok"), r.get("local_tcp_loss", 100.0), r.get("local_tcp_ms", 9999.0), r.get("local_https_ms", 9999.0)))
         ips = [r["ip"] for r in local_ok]
         if len(ips) < args.min_count:
             print(f"[ERROR] local-only tcpping passed only {len(ips)} IPs")
