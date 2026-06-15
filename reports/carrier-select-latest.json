@@ -1,0 +1,283 @@
+{
+  "generatedAt": "2026-06-15T07:03:52Z",
+  "results": {
+    "cfip": [
+      {
+        "ip": "104.16.57.195",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 132.401,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shanghai/Hangzhou Alibaba Advertising"
+        ],
+        "id": "2GHyWriTsePsBa3u200020aBj"
+      },
+      {
+        "ip": "104.16.27.96",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 176.177,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "2ggqfuvVtqsYNlYPK00020aBj"
+      },
+      {
+        "ip": "104.16.115.48",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 204.534,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
+        ],
+        "id": "2g2w3JEe3cjxKeV0300020aBj"
+      },
+      {
+        "ip": "104.16.177.159",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 189.688,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Mobile Communicaitons"
+        ],
+        "id": "2o2Tpqx839j8RW6d000020aBj"
+      },
+      {
+        "ip": "173.245.49.3",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 212.738,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Networks Inter-Exchange"
+        ],
+        "id": "2QD50jH6FR3eS1Mo800020aBj"
+      }
+    ],
+    "cmcc": [
+      {
+        "ip": "104.16.27.96",
+        "group": "cmcc",
+        "magic": "China Mobile",
+        "avg": 727.268,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Mobile Communicaitons"
+        ],
+        "id": "26iRrzMIV38PtfH5k00020aBj"
+      },
+      {
+        "ip": "104.16.57.195",
+        "group": "cmcc",
+        "magic": "China Mobile",
+        "avg": 212.702,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Mobile Communicaitons"
+        ],
+        "id": "2w47YiBQJYAZmu8P300020aBj"
+      },
+      {
+        "ip": "104.16.115.48",
+        "group": "cmcc",
+        "magic": "China Mobile",
+        "avg": 1224.643,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Mobile Communicaitons"
+        ],
+        "id": "2JtE9XirnPol3p2YQ00020aBj"
+      },
+      {
+        "ip": "104.16.177.159",
+        "group": "cmcc",
+        "magic": "China Mobile",
+        "avg": 197.803,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Ningbo/China Mobile Communications"
+        ],
+        "id": "2sBIOQ0N5qjrpijlk00020aBj"
+      },
+      {
+        "ip": "173.245.49.3",
+        "group": "cmcc",
+        "magic": "China Mobile",
+        "avg": 1241.98,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Mobile Communicaitons"
+        ],
+        "id": "2OFqORsKUBUXbAOao00020aBj"
+      }
+    ],
+    "ctcc": [
+      {
+        "ip": "104.16.57.195",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 164.56,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shenzhen/Hangzhou Alibaba Advertising"
+        ],
+        "id": "2sLHWxrHZtUkmT4wR00020aBj"
+      },
+      {
+        "ip": "104.16.27.96",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 42.909,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
+        ],
+        "id": "2Ob1gYf4aFmBkO2xd00020aBj"
+      },
+      {
+        "ip": "104.16.115.48",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 704.708,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shenzhen/Hangzhou Alibaba Advertising"
+        ],
+        "id": "2zTbh2ew1baB3sGBF00020aBj"
+      },
+      {
+        "ip": "104.16.177.159",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 166.835,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shenzhen/Hangzhou Alibaba Advertising"
+        ],
+        "id": "2sS8BmwmQHdHQMw6h00020aBj"
+      },
+      {
+        "ip": "173.245.49.3",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 162.002,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shenzhen/Hangzhou Alibaba Advertising"
+        ],
+        "id": "2rSAyL7LhiM0h6T5000020aBj"
+      }
+    ],
+    "cucc": [
+      {
+        "ip": "104.16.57.195",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 165.021,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "2NNbvXkDjcOztIerb00020aBj"
+      },
+      {
+        "ip": "104.16.27.96",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 726.597,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
+        ],
+        "id": "2rbxGHD50iwWhByHs00020aBj"
+      },
+      {
+        "ip": "104.16.115.48",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 166.497,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "26EQbjvv9LteKPUHo00020aBj"
+      },
+      {
+        "ip": "104.16.177.159",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 712.505,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
+        ],
+        "id": "2qIbOUmInNWLAEm2i00020aBj"
+      },
+      {
+        "ip": "173.245.49.3",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 170.873,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "2qqwJLAVuZWinBWnL00020aBk"
+      }
+    ]
+  },
+  "selected": {
+    "cfip.txt": [
+      "104.16.57.195",
+      "104.16.27.96",
+      "104.16.177.159",
+      "104.16.115.48",
+      "173.245.49.3"
+    ],
+    "cmcc.txt": [
+      "104.16.177.159",
+      "104.16.57.195",
+      "104.16.27.96",
+      "104.16.115.48",
+      "173.245.49.3"
+    ],
+    "ctcc.txt": [
+      "104.16.27.96",
+      "173.245.49.3",
+      "104.16.57.195",
+      "104.16.177.159",
+      "104.16.115.48"
+    ],
+    "cucc.txt": [
+      "104.16.57.195",
+      "104.16.115.48",
+      "173.245.49.3",
+      "104.16.177.159",
+      "104.16.27.96"
+    ]
+  }
+}

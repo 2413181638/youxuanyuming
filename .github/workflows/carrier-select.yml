@@ -1,0 +1,86 @@
+name: Select Carrier Cloudflare IPs
+
+on:
+  schedule:
+    # 每 6 小时跑一次，避免 Globalping 公共额度过度消耗
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      candidate_limit:
+        description: "候选 IP 上限"
+        required: false
+        default: "40"
+      per_group_limit:
+        description: "每组实测 IP 上限"
+        required: false
+        default: "18"
+      max_count:
+        description: "每个 txt 最多保留数量"
+        required: false
+        default: "15"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: carrier-cloudflare-ip-select
+  cancel-in-progress: true
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync latest
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase origin ${{ github.ref_name }} || true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run carrier selector
+        env:
+          PYTHONIOENCODING: "utf-8"
+          LC_ALL: "C.UTF-8"
+          LANG: "C.UTF-8"
+          # 可选：如果你以后申请 Globalping token，可放进仓库 Secrets 提高额度
+          GLOBALPING_TOKEN: ${{ secrets.GLOBALPING_TOKEN }}
+          CANDIDATE_LIMIT: ${{ github.event.inputs.candidate_limit || '40' }}
+          PER_GROUP_LIMIT: ${{ github.event.inputs.per_group_limit || '18' }}
+          MAX_COUNT: ${{ github.event.inputs.max_count || '15' }}
+          MIN_COUNT: "5"
+          LATENCY_LIMIT_MS: "150"
+          LOSS_LIMIT_PCT: "3"
+          TCP_PORT: "443"
+          PACKETS: "3"
+          PROBES: "1"
+          WORKERS: "3"
+        run: |
+          python carrier_select.py
+
+      - name: Show selected files
+        run: |
+          for f in cfip.txt cmcc.txt ctcc.txt cucc.txt; do
+            echo "--- $f ($(grep -c '^[0-9]' "$f" || true)) ---"
+            cat "$f" || true
+          done
+
+      - name: Commit & Push if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update carrier Cloudflare IP pools"
+          file_pattern: "cfip.txt cmcc.txt ctcc.txt cucc.txt reports/carrier-select-latest.json"
