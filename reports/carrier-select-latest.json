@@ -1,634 +1,1115 @@
 {
-  "generatedAt": "2026-06-15T07:11:14Z",
+  "generatedAt": "2026-06-15T07:28:05Z",
+  "localPrecheck": [
+    {
+      "ip": "104.17.167.124",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.71,
+      "local_https_ok": true,
+      "local_https_ms": 140.97,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.40.163",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 10.06,
+      "local_https_ok": true,
+      "local_https_ms": 139.36,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.16.232.223",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.55,
+      "local_https_ok": true,
+      "local_https_ms": 171.13,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.43.248",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 9.67,
+      "local_https_ok": true,
+      "local_https_ms": 161.51,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.16.157.139",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.12,
+      "local_https_ok": true,
+      "local_https_ms": 174.52,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.228.35",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 7.9,
+      "local_https_ok": true,
+      "local_https_ms": 143.98,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.16.23.216",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.07,
+      "local_https_ok": true,
+      "local_https_ms": 191.2,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.178.181",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.24,
+      "local_https_ok": true,
+      "local_https_ms": 160.24,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.208.1",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.22,
+      "local_https_ok": true,
+      "local_https_ms": 183.57,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.16.241.229",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.81,
+      "local_https_ok": true,
+      "local_https_ms": 200.28,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.46.111",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 22.47,
+      "local_https_ok": true,
+      "local_https_ms": 190.41,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.43.246",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.14,
+      "local_https_ok": true,
+      "local_https_ms": 234.83,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.127.110",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.6,
+      "local_https_ok": true,
+      "local_https_ms": 243.13,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.44.151",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 9.91,
+      "local_https_ok": true,
+      "local_https_ms": 236.14,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.102.186",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 13.58,
+      "local_https_ok": true,
+      "local_https_ms": 236.0,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.18.37.133",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 19.4,
+      "local_https_ok": true,
+      "local_https_ms": 236.42,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.25.105.1",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.0,
+      "local_https_ok": true,
+      "local_https_ms": 136.62,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.19.54.144",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.31,
+      "local_https_ok": true,
+      "local_https_ms": 144.67,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.26.5.134",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.02,
+      "local_https_ok": true,
+      "local_https_ms": 137.76,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.21.91.19",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.63,
+      "local_https_ok": true,
+      "local_https_ms": 169.36,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.19.152.93",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.87,
+      "local_https_ok": true,
+      "local_https_ms": 191.93,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.26.4.90",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.46,
+      "local_https_ok": true,
+      "local_https_ms": 188.79,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.27.21.118",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.97,
+      "local_https_ok": true,
+      "local_https_ms": 176.5,
+      "local_https_code": 200
+    },
+    {
+      "ip": "108.162.198.150",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 1.77,
+      "local_https_ok": true,
+      "local_https_ms": 192.35,
+      "local_https_code": 200
+    },
+    {
+      "ip": "108.162.198.201",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 1.65,
+      "local_https_ok": true,
+      "local_https_ms": 187.7,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.24.131",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.63,
+      "local_https_ok": true,
+      "local_https_ms": 179.15,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.35.245",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.75,
+      "local_https_ok": true,
+      "local_https_ms": 186.75,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.36.122",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.75,
+      "local_https_ok": true,
+      "local_https_ms": 186.67,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.38.144",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.06,
+      "local_https_ok": true,
+      "local_https_ms": 189.02,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.109",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.47,
+      "local_https_ok": true,
+      "local_https_ms": 140.45,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.183",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 1.86,
+      "local_https_ok": true,
+      "local_https_ms": 186.9,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.108",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.12,
+      "local_https_ok": true,
+      "local_https_ms": 186.7,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.52",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.59,
+      "local_https_ok": true,
+      "local_https_ms": 142.74,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.222",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.83,
+      "local_https_ok": true,
+      "local_https_ms": 136.41,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.170",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.71,
+      "local_https_ok": true,
+      "local_https_ms": 180.98,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.31",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.67,
+      "local_https_ok": true,
+      "local_https_ms": 171.48,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.6",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.6,
+      "local_https_ok": true,
+      "local_https_ms": 167.23,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.157",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 1.92,
+      "local_https_ok": true,
+      "local_https_ms": 166.09,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.62",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.15,
+      "local_https_ok": true,
+      "local_https_ms": 182.16,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.156",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.91,
+      "local_https_ok": true,
+      "local_https_ms": 190.21,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.109",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.9,
+      "local_https_ok": true,
+      "local_https_ms": 181.34,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.235",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.14,
+      "local_https_ok": true,
+      "local_https_ms": 183.1,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.99",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.53,
+      "local_https_ok": true,
+      "local_https_ms": 159.22,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.123",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.14,
+      "local_https_ok": true,
+      "local_https_ms": 202.48,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.19.207.216",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.81,
+      "local_https_ok": true,
+      "local_https_ms": 159.1,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.135.91",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.82,
+      "local_https_ok": true,
+      "local_https_ms": 204.09,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.82",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.13,
+      "local_https_ok": true,
+      "local_https_ms": 138.97,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.234",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 9.4,
+      "local_https_ok": true,
+      "local_https_ms": 182.93,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.14",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 10.82,
+      "local_https_ok": true,
+      "local_https_ms": 189.83,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.96",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.87,
+      "local_https_ok": true,
+      "local_https_ms": 205.7,
+      "local_https_code": 200
+    },
+    {
+      "ip": "188.114.97.144",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.92,
+      "local_https_ok": true,
+      "local_https_ms": 151.8,
+      "local_https_code": 200
+    },
+    {
+      "ip": "162.159.134.225",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 3.12,
+      "local_https_ok": true,
+      "local_https_ms": 165.35,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.115",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.4,
+      "local_https_ok": true,
+      "local_https_ms": 169.85,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.58.41",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 1.89,
+      "local_https_ok": true,
+      "local_https_ms": 100.07,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.17.144.68",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.41,
+      "local_https_ok": true,
+      "local_https_ms": 89.6,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.205",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 4.79,
+      "local_https_ok": true,
+      "local_https_ms": 83.24,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.41",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 2.81,
+      "local_https_ok": true,
+      "local_https_ms": 146.28,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.231",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 6.47,
+      "local_https_ok": true,
+      "local_https_ms": 140.42,
+      "local_https_code": 200
+    },
+    {
+      "ip": "173.245.49.148",
+      "local_tcp_ok": true,
+      "local_tcp_ms": 5.55,
+      "local_https_ok": true,
+      "local_https_ms": 108.55,
+      "local_https_code": 200
+    },
+    {
+      "ip": "104.20.255.53",
+      "local_tcp_ok": false,
+      "local_tcp_ms": 9999.0,
+      "local_https_ok": false,
+      "local_https_ms": 9999.0,
+      "local_error": "TimeoutError"
+    }
+  ],
   "results": {
     "cfip": [
       {
-        "ip": "104.16.232.223",
+        "ip": "173.245.49.205",
         "group": "cfip",
         "magic": "China",
-        "avg": 43.686,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2kibmC9GZkkd53xJd00020aBq"
-      },
-      {
-        "ip": "104.16.23.216",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 44.076,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2VIQylLYi7zQMFDNU00020aBq"
-      },
-      {
-        "ip": "104.16.241.229",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 231.394,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Networks Inter-Exchange"
-        ],
-        "id": "28cdLQIpnOqn0ALdg00020aBq"
-      },
-      {
-        "ip": "104.17.102.186",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 43.745,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2dE997MMA7UOsyniF00020aBq"
-      },
-      {
-        "ip": "104.17.109.10",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 238.04,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2rT7vxAHC7rWnAvCV00020aBq"
-      },
-      {
-        "ip": "104.17.24.106",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 492.211,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Networks Inter-Exchange"
-        ],
-        "id": "2X1uDfWudKhuESNmM00020aBq"
-      },
-      {
-        "ip": "104.17.109.100",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 137.89,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/Hangzhou Alibaba Advertising"
-        ],
-        "id": "2KIgsDCHQ9nbRAyp800020aBq"
-      },
-      {
-        "ip": "104.17.153.251",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 44.305,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2IhRXiTwSu6GKDd4B00020aBq"
-      },
-      {
-        "ip": "104.17.127.110",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 162.998,
+        "avg": 166.687,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Shenzhen/Hangzhou Alibaba Advertising"
         ],
-        "id": "20cqK81mNWPV7Sfwg00020aBq"
+        "id": "2L5cnYVQSvmH0oURm00020aC6"
+      },
+      {
+        "ip": "104.17.144.68",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 156.071,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Unicom Beijing Province Network"
+        ],
+        "id": "2Cc719K0nXp3Lw4ld00020aC6"
+      },
+      {
+        "ip": "173.245.58.41",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 43.184,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Unicom Beijing Province Network"
+        ],
+        "id": "2hTPVTeSyuuofOcfR00020aC6"
+      },
+      {
+        "ip": "173.245.49.148",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 153.432,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
+        ],
+        "id": "2vWyWLSrX96dUPZ4300020aC7"
+      },
+      {
+        "ip": "173.245.49.222",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 193.795,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Mobile Communicaitons"
+        ],
+        "id": "2GuvMfIaPCJRXfM3n00020aC7"
+      },
+      {
+        "ip": "104.25.105.1",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 43.954,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Unicom Beijing Province Network"
+        ],
+        "id": "2dU7GZtYkDNbgsx5E00020aC7"
+      },
+      {
+        "ip": "173.245.49.82",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 480.814,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
+        ],
+        "id": "2eCoalTOaWSGhrK5N00020aC7"
+      },
+      {
+        "ip": "104.26.5.134",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 84.48,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "2JlhoqNvZSh964sIr00020aC7"
+      },
+      {
+        "ip": "104.18.40.163",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 59.182,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shenzhen/Hangzhou Alibaba Advertising"
+        ],
+        "id": "2DRbvtVNeJGDfgjtr00020aC7"
+      },
+      {
+        "ip": "173.245.49.231",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 519.387,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/Hangzhou Alibaba Advertising"
+        ],
+        "id": "2EDrIB3ME0CLdO5ex00020aC7"
+      },
+      {
+        "ip": "173.245.58.109",
+        "group": "cfip",
+        "magic": "China",
+        "avg": 175.577,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "2RRzkMG5UOXuFLrhM00020aC7"
       },
       {
         "ip": "104.17.167.124",
         "group": "cfip",
         "magic": "China",
-        "avg": 198.453,
+        "avg": 45.293,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Unicom Beijing Province Network"
         ],
-        "id": "2JCc3n2BORQotH1js00020aBq"
-      },
-      {
-        "ip": "104.18.43.246",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 51.998,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shenzhen/Hangzhou Alibaba Advertising"
-        ],
-        "id": "2eX3jaqR9MW9AyImY00020aBq"
-      },
-      {
-        "ip": "104.18.39.150",
-        "group": "cfip",
-        "magic": "China",
-        "avg": 213.107,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2fGvt23906hikdC3M00020aBq"
+        "id": "2tOFz1p35lyd6u8t800020aC7"
       }
     ],
     "cmcc": [
       {
-        "ip": "104.16.232.223",
+        "ip": "173.245.49.205",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 191.088,
+        "avg": 194.143,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2C04hiAyUBRcRsVe000020aBq"
+        "id": "2IZO268aNsqDICQLR00020aC7"
       },
       {
-        "ip": "104.16.23.216",
+        "ip": "104.17.144.68",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 189.188,
+        "avg": 50.937,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2SaBh32wsnMVGyDDV00020aBq"
+        "id": "2oWLPYCU9kVALAA7s00020aC7"
       },
       {
-        "ip": "104.16.241.229",
+        "ip": "173.245.58.41",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 49.177,
+        "avg": 538.868,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2xL3vtjpOiJ4rgQPc00020aBq"
+        "id": "20fZ78kw946uftA9x00020aC7"
       },
       {
-        "ip": "104.17.24.106",
+        "ip": "173.245.49.148",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 49.768,
+        "avg": 195.857,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2tZs37NKyMefXoeFE00020aBq"
+        "id": "2jmedNBXNHlWuGdYT00020aC7"
       },
       {
-        "ip": "104.17.102.186",
+        "ip": "104.25.105.1",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 59.752,
+        "avg": 531.055,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2dAkaFJVXMpZeWkzT00020aBq"
+        "id": "2eWvNVbSf1tnsDgTk00020aC7"
       },
       {
-        "ip": "104.17.109.10",
+        "ip": "173.245.49.222",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 55.733,
+        "avg": 202.501,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2q7u2oMZNdgD0hpeh00020aBq"
+        "id": "2Qu2aFarYeKkympwV00020aC7"
       },
       {
-        "ip": "104.17.127.110",
+        "ip": "104.26.5.134",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 49.797,
+        "avg": 192.174,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2hjc1kKFcN36HIj6Y00020aBq"
+        "id": "2AakUY4i79vCwVMEr00020aC7"
       },
       {
-        "ip": "104.17.109.100",
+        "ip": "173.245.49.82",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 52.819,
+        "avg": 192.467,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2DzqzaoaMaxrdfZNz00020aBq"
+        "id": "2g3RdIhVYgBGRsJpV00020aC7"
       },
       {
-        "ip": "104.17.153.251",
+        "ip": "104.18.40.163",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 51.613,
+        "avg": 51.051,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2I6PFpU5zBO96ESGG00020aBq"
+        "id": "2SJQI9aZBHr54V6Y700020aC7"
       },
       {
-        "ip": "104.18.43.246",
+        "ip": "173.245.49.231",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 50.397,
+        "avg": 188.709,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "20guwKZpltWdZvOV700020aBq"
+        "id": "2DZ4Bd5n4uzwaeV4f00020aC7"
       },
       {
-        "ip": "104.18.39.150",
+        "ip": "173.245.58.109",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 56.776,
+        "avg": 201.536,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2wxRd2b69mtpQK6Wy00020aBq"
+        "id": "2g3tF9Ax8kMm6PCvM00020aC7"
       },
       {
         "ip": "104.17.167.124",
         "group": "cmcc",
         "magic": "China Mobile",
-        "avg": 50.524,
+        "avg": 51.915,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2O4L3XDhcDLukdev900020aBq"
+        "id": "2khSuzsOYgSrDAI2l00020aC7"
       }
     ],
     "ctcc": [
       {
-        "ip": "104.16.23.216",
+        "ip": "104.17.144.68",
         "group": "ctcc",
         "magic": "China",
-        "avg": 169.047,
+        "avg": 51.912,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Mobile Communicaitons"
+        ],
+        "id": "2I7fT4UVubfXFRkpY00020aC7"
+      },
+      {
+        "ip": "173.245.49.205",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 176.501,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Changsha/CHINA UNICOM China169 Backbone"
         ],
-        "id": "2OErGsusw2q6Ihk1K00020aBq"
+        "id": "2jyMFPJEkcAlfe0VU00020aC7"
       },
       {
-        "ip": "104.16.232.223",
+        "ip": "173.245.58.41",
         "group": "ctcc",
         "magic": "China",
-        "avg": 45.501,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2CJV6d9RSHMK9mo0o00020aBq"
-      },
-      {
-        "ip": "104.16.241.229",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 41.478,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2qWD6bh80zzlDn4K000020aBq"
-      },
-      {
-        "ip": "104.17.24.106",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 146.821,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Networks Inter-Exchange"
-        ],
-        "id": "2EGjcTtOgU6iRKBX100020aBq"
-      },
-      {
-        "ip": "104.17.102.186",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 215.348,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2KNnknOpCjha7L15J00020aBq"
-      },
-      {
-        "ip": "104.17.109.10",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 225.141,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Networks Inter-Exchange"
-        ],
-        "id": "25vvk48KEpkB62hhg00020aBq"
-      },
-      {
-        "ip": "104.17.109.100",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 154.552,
+        "avg": 50.845,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Shenzhen/Hangzhou Alibaba Advertising"
         ],
-        "id": "2mDblS74u1UJmD5DM00020aBq"
+        "id": "2njDbz5x3kw2kUCVj00020aC7"
       },
       {
-        "ip": "104.17.153.251",
+        "ip": "173.245.49.222",
         "group": "ctcc",
         "magic": "China",
-        "avg": 145.48,
+        "avg": 184.261,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
-          "CN/Shanghai/Hangzhou Alibaba Advertising"
+          "CN/Beijing/Hangzhou Alibaba Advertising"
         ],
-        "id": "2e2AKu54ykOUc7mwb00020aBq"
+        "id": "2wr0DlF06iklR7BfG00020aC7"
       },
       {
-        "ip": "104.17.127.110",
+        "ip": "173.245.49.148",
         "group": "ctcc",
         "magic": "China",
-        "avg": 237.549,
+        "avg": 211.36,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
+          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
         ],
-        "id": "2QxQ76oXvTwoToQrB00020aBq"
+        "id": "2MrbyDoj9OYBMhtur00020aC7"
       },
       {
-        "ip": "104.17.167.124",
+        "ip": "104.26.5.134",
         "group": "ctcc",
         "magic": "China",
-        "avg": 145.865,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/Hangzhou Alibaba Advertising"
-        ],
-        "id": "2MHUjUxyFyJCCAEHP00020aBq"
-      },
-      {
-        "ip": "104.18.43.246",
-        "group": "ctcc",
-        "magic": "China",
-        "avg": 48.583,
+        "avg": 192.631,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Mobile Communicaitons"
         ],
-        "id": "2TRCLlvnHCrzsFxg700020aBq"
+        "id": "2ohBAOECH039UAA7X00020aC7"
       },
       {
-        "ip": "104.18.39.150",
+        "ip": "104.25.105.1",
         "group": "ctcc",
         "magic": "China",
-        "avg": 66.2,
+        "avg": 134.523,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
-          "CN/Shanghai/Hangzhou Alibaba Advertising"
+          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
         ],
-        "id": "2lpGL64boD5Vg7UFw00020aBq"
+        "id": "24jEVhWp14EbwBrvp00020aC7"
+      },
+      {
+        "ip": "173.245.49.82",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 161.965,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "2Z22ObexeXd4z8tWo00020aC7"
+      },
+      {
+        "ip": "104.18.40.163",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 174.53,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "2XCdbskfw8p1GHkOE00020aC7"
+      },
+      {
+        "ip": "173.245.49.231",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 176.315,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Changsha/CHINA UNICOM China169 Backbone"
+        ],
+        "id": "2xYja02gJMousdU5w00020aC7"
+      },
+      {
+        "ip": "173.245.58.109",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 85.633,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
+        ],
+        "id": "2KDB5DBigMgXokMaI00020aC7"
+      },
+      {
+        "ip": "104.17.167.124",
+        "group": "ctcc",
+        "magic": "China",
+        "avg": 160.215,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/Shenzhen Tencent Computer Systems Company"
+        ],
+        "id": "2ljK7SEv5bdJ67W4D00020aC7"
       }
     ],
     "cucc": [
       {
-        "ip": "104.16.232.223",
+        "ip": "104.17.144.68",
         "group": "cucc",
         "magic": "China Unicom",
-        "avg": 169.545,
+        "avg": 197.106,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Changsha/CHINA UNICOM China169 Backbone"
         ],
-        "id": "2pgiQEY0NPY6lMrCj00020aBq"
+        "id": "2SB3udRxjiRcYeLuB00020aC7"
       },
       {
-        "ip": "104.16.241.229",
+        "ip": "173.245.58.41",
         "group": "cucc",
         "magic": "China Unicom",
-        "avg": 173.948,
+        "avg": 163.134,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Changsha/CHINA UNICOM China169 Backbone"
         ],
-        "id": "2p4sj8vXsfZGH0Lx600020aBq"
+        "id": "2cZzJDXehaxdxKjzM00020aC7"
       },
       {
-        "ip": "104.16.23.216",
+        "ip": "173.245.49.205",
         "group": "cucc",
         "magic": "China Unicom",
-        "avg": 547.619,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2i5Xre8zePfJNHU0f00020aBq"
-      },
-      {
-        "ip": "104.17.24.106",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 176.662,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2cIPcNylP2LFnO4vJ00020aBq"
-      },
-      {
-        "ip": "104.17.102.186",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 43.143,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
-        ],
-        "id": "2MgU353W6LZCVCPsi00020aBr"
-      },
-      {
-        "ip": "104.17.109.10",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 168.148,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2H8JKlo3A7tIK3gvN00020aBr"
-      },
-      {
-        "ip": "104.17.109.100",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 43.152,
+        "avg": 235.303,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Unicom Beijing Province Network"
         ],
-        "id": "2S83er2rbcsKTeITt00020aBr"
+        "id": "2Oro7mpBrtwAdERoD00020aC7"
       },
       {
-        "ip": "104.17.127.110",
+        "ip": "104.25.105.1",
         "group": "cucc",
         "magic": "China Unicom",
-        "avg": 43.621,
+        "avg": 205.808,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
+        ],
+        "id": "2aVGrfjWp31HsOwiO00020aC7"
+      },
+      {
+        "ip": "173.245.49.222",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 213.069,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
+        ],
+        "id": "2Tl1OvhH4EvK01CVI00020aC7"
+      },
+      {
+        "ip": "173.245.49.148",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 44.152,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Unicom Beijing Province Network"
         ],
-        "id": "2rdyGc8kZf6NSVSke00020aBr"
+        "id": "2o6AyYtB6orKo7nZA00020aC7"
+      },
+      {
+        "ip": "104.26.5.134",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 42.514,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Shanghai/CHINA UNICOM Industrial Internet Backbone"
+        ],
+        "id": "2mfM70MbWHf0LeJez00020aC7"
+      },
+      {
+        "ip": "173.245.49.82",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 234.046,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Unicom Beijing Province Network"
+        ],
+        "id": "2c6xEmBhV7jAeq3UY00020aC7"
+      },
+      {
+        "ip": "104.18.40.163",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 44.493,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Unicom Beijing Province Network"
+        ],
+        "id": "2VKFYw9xYPrncmfVY00020aC7"
+      },
+      {
+        "ip": "173.245.49.231",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 44.346,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Unicom Beijing Province Network"
+        ],
+        "id": "2vYnUeiASpZ9lCc5N00020aC8"
+      },
+      {
+        "ip": "173.245.58.109",
+        "group": "cucc",
+        "magic": "China Unicom",
+        "avg": 43.328,
+        "loss": 0.0,
+        "probe_count": 1,
+        "probes": [
+          "CN/Beijing/China Unicom Beijing Province Network"
+        ],
+        "id": "2JySVuNAHNjsh5TuV00020aC8"
       },
       {
         "ip": "104.17.167.124",
         "group": "cucc",
         "magic": "China Unicom",
-        "avg": 45.087,
+        "avg": 193.883,
         "loss": 0.0,
         "probe_count": 1,
         "probes": [
           "CN/Beijing/China Unicom Beijing Province Network"
         ],
-        "id": "2fezY2r0XJikcs9ot00020aBr"
-      },
-      {
-        "ip": "104.17.153.251",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 171.353,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2z2OtI9mgklTSZmcY00020aBr"
-      },
-      {
-        "ip": "104.18.39.150",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 201.822,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Beijing/China Unicom Beijing Province Network"
-        ],
-        "id": "2R5BBHhJpbyHa9n1T00020aBr"
-      },
-      {
-        "ip": "104.18.43.246",
-        "group": "cucc",
-        "magic": "China Unicom",
-        "avg": 171.986,
-        "loss": 0.0,
-        "probe_count": 1,
-        "probes": [
-          "CN/Changsha/CHINA UNICOM China169 Backbone"
-        ],
-        "id": "2d5MPparDEeoXcgo000020aBr"
+        "id": "2hk5495qTEpg5SVP500020aC8"
       }
     ]
   },
   "selected": {
     "cfip.txt": [
-      "104.16.232.223",
-      "104.17.102.186",
-      "104.16.23.216",
-      "104.17.153.251",
-      "104.18.43.246",
-      "104.17.109.100"
+      "173.245.58.41",
+      "104.25.105.1",
+      "104.17.167.124",
+      "104.18.40.163",
+      "104.26.5.134"
     ],
     "cmcc.txt": [
-      "104.16.241.229",
-      "104.17.24.106",
-      "104.17.127.110",
-      "104.18.43.246",
+      "104.17.144.68",
+      "104.18.40.163",
       "104.17.167.124",
-      "104.17.153.251",
-      "104.17.109.100",
-      "104.17.109.10",
-      "104.18.39.150",
-      "104.17.102.186"
+      "173.245.49.231",
+      "104.26.5.134",
+      "173.245.49.82",
+      "173.245.49.205",
+      "173.245.49.148",
+      "173.245.58.109",
+      "173.245.49.222",
+      "104.25.105.1",
+      "173.245.58.41"
     ],
     "ctcc.txt": [
-      "104.16.241.229",
-      "104.16.232.223",
-      "104.18.43.246",
-      "104.18.39.150",
-      "104.17.153.251",
+      "173.245.58.41",
+      "104.17.144.68",
+      "173.245.58.109",
+      "104.25.105.1",
       "104.17.167.124",
-      "104.17.24.106"
+      "173.245.49.82",
+      "104.18.40.163",
+      "173.245.49.231",
+      "173.245.49.205",
+      "173.245.49.222",
+      "104.26.5.134",
+      "173.245.49.148"
     ],
     "cucc.txt": [
-      "104.17.102.186",
-      "104.17.109.100",
-      "104.17.127.110",
-      "104.17.167.124",
-      "104.17.109.10",
-      "104.16.232.223",
-      "104.17.153.251",
-      "104.18.43.246",
-      "104.16.241.229",
-      "104.17.24.106",
-      "104.18.39.150",
-      "104.16.23.216"
+      "104.26.5.134",
+      "173.245.58.109",
+      "173.245.49.148",
+      "173.245.49.231",
+      "104.18.40.163"
     ]
   }
 }
