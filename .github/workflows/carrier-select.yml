@@ -77,6 +77,9 @@ jobs:
           PACKETS: "3"
           PROBES: "1"
           WORKERS: "3"
+          LOCAL_VALIDATE: "1"
+          LOCAL_WORKERS: "16"
+          LOCAL_TIMEOUT: "4"
         run: |
           python carrier_select.py
 

@@ -21,7 +21,9 @@ import json
 import os
 import random
 import re
+import socket
 import statistics
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -181,6 +183,65 @@ def score(row: dict) -> Tuple[float, float, str]:
     return (float(row.get("loss", 100.0)), float(row.get("avg", 9999.0)), row.get("ip", ""))
 
 
+def local_probe_ip(ip: str, port: int = 443, timeout: float = 4.0) -> dict:
+    """GitHub Actions 容器本地出口预检：TCP connect + curl --resolve HTTPS。
+
+    这不是国内三网测试，只用于剔除容器出口下不可 TCP/HTTPS 访问的候选 IP。
+    """
+    out = {"ip": ip, "local_tcp_ok": False, "local_tcp_ms": 9999.0, "local_https_ok": False, "local_https_ms": 9999.0}
+    start = time.time()
+    try:
+        s = socket.create_connection((ip, port), timeout=timeout)
+        s.close()
+        out["local_tcp_ok"] = True
+        out["local_tcp_ms"] = round((time.time() - start) * 1000, 2)
+    except Exception as e:
+        out["local_error"] = type(e).__name__
+        return out
+
+    # 用 SNI/Host 真实挂到 CF IP 测 HTTPS，不校验证书链之外的内容；失败不直接判死，TCP OK 仍可进入 Globalping。
+    cmd = [
+        "curl", "-sS", "--http1.1", "--connect-timeout", str(int(timeout)), "--max-time", str(int(timeout + 4)),
+        "-o", "/dev/null", "-w", "%{http_code} %{time_connect} %{time_appconnect} %{time_total}",
+        "--resolve", f"www.cloudflare.com:443:{ip}", "https://www.cloudflare.com/cdn-cgi/trace",
+    ]
+    try:
+        p = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout + 8)
+        parts = (p.stdout or "").strip().split()
+        if parts:
+            code = int(parts[0]) if parts[0].isdigit() else 0
+            out["local_https_code"] = code
+            if len(parts) >= 4:
+                out["local_https_ms"] = round(float(parts[3]) * 1000, 2)
+            out["local_https_ok"] = 200 <= code < 500
+        if p.stderr:
+            out["local_curl_stderr"] = p.stderr.strip()[:160]
+    except Exception as e:
+        out["local_curl_error"] = type(e).__name__
+    return out
+
+
+def local_prefilter(candidates: List[str], args) -> Tuple[List[str], List[dict]]:
+    if not args.local_validate:
+        return candidates, []
+    print(f"[INFO] local container precheck: {len(candidates)} IPs, port={args.port}")
+    rows: List[dict] = []
+    with ThreadPoolExecutor(max_workers=max(1, args.local_workers)) as ex:
+        futs = {ex.submit(local_probe_ip, ip, args.port, args.local_timeout): ip for ip in candidates}
+        for fut in as_completed(futs):
+            row = fut.result()
+            rows.append(row)
+            print(f"[LOCAL] {row['ip']} tcp={row['local_tcp_ok']} {row['local_tcp_ms']}ms https={row['local_https_ok']} {row.get('local_https_code','-')} {row['local_https_ms']}ms")
+    ok = [r for r in rows if r.get("local_tcp_ok")]
+    ok.sort(key=lambda r: (not r.get("local_https_ok"), r.get("local_https_ms", 9999.0), r.get("local_tcp_ms", 9999.0)))
+    ips = [r["ip"] for r in ok]
+    # 如果本地预检全失败，不要清空候选，避免 curl/网络短故障导致 txt 为空。
+    if len(ips) < args.min_count:
+        print(f"[WARN] local precheck passed only {len(ips)} IPs, keep original candidates")
+        return candidates, rows
+    return ips, rows
+
+
 def select_ips(rows: List[dict], min_count: int, max_count: int, latency_limit: float, loss_limit: float) -> List[str]:
     ok = [r for r in rows if r["loss"] < loss_limit and r["avg"] < latency_limit]
     chosen = sorted(ok, key=score)[:max_count]
@@ -208,6 +269,9 @@ def main() -> int:
     ap.add_argument("--probes", type=int, default=int(os.getenv("PROBES", "1")))
     ap.add_argument("--workers", type=int, default=int(os.getenv("WORKERS", "3")))
     ap.add_argument("--measure-timeout", type=int, default=int(os.getenv("MEASURE_TIMEOUT", "90")))
+    ap.add_argument("--local-validate", action=argparse.BooleanOptionalAction, default=os.getenv("LOCAL_VALIDATE", "1") not in ("0", "false", "False", "no"))
+    ap.add_argument("--local-workers", type=int, default=int(os.getenv("LOCAL_WORKERS", "16")))
+    ap.add_argument("--local-timeout", type=float, default=float(os.getenv("LOCAL_TIMEOUT", "4")))
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -216,6 +280,9 @@ def main() -> int:
         print("[ERROR] 没有可用 Cloudflare IPv4 候选")
         return 2
     print(f"[INFO] candidates={len(candidates)} port={args.port} packets={args.packets}")
+    candidates, local_rows = local_prefilter(candidates, args)
+    candidates = candidates[:args.candidate_limit]
+    print(f"[INFO] candidates_after_local_precheck={len(candidates)}")
 
     all_results: Dict[str, List[dict]] = {k: [] for k in OUTPUTS}
     for group in ["cfip", "cmcc", "ctcc", "cucc"]:
@@ -229,7 +296,7 @@ def main() -> int:
                 print(f"[RESULT] {group} {row['ip']} avg={row['avg']:.1f}ms loss={row['loss']:.1f}% magic={row.get('magic')}")
                 time.sleep(0.2)
 
-    report = {"generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "results": all_results, "selected": {}}
+    report = {"generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "localPrecheck": local_rows, "results": all_results, "selected": {}}
     for group, rows in all_results.items():
         ips = select_ips(rows, args.min_count, args.max_count, args.latency_limit, args.loss_limit)
         report["selected"][OUTPUTS[group]] = ips
