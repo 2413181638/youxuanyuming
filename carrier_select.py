@@ -197,8 +197,8 @@ def write_list(path: str, ips: List[str]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--inputs", nargs="*", default=DEFAULT_INPUTS)
-    ap.add_argument("--candidate-limit", type=int, default=int(os.getenv("CANDIDATE_LIMIT", "40")))
-    ap.add_argument("--per-group-limit", type=int, default=int(os.getenv("PER_GROUP_LIMIT", "18")))
+    ap.add_argument("--candidate-limit", type=int, default=int(os.getenv("CANDIDATE_LIMIT", "60")))
+    ap.add_argument("--per-group-limit", type=int, default=int(os.getenv("PER_GROUP_LIMIT", "12")))
     ap.add_argument("--min-count", type=int, default=int(os.getenv("MIN_COUNT", "5")))
     ap.add_argument("--max-count", type=int, default=int(os.getenv("MAX_COUNT", "15")))
     ap.add_argument("--latency-limit", type=float, default=float(os.getenv("LATENCY_LIMIT_MS", "150")))

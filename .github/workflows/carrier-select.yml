@@ -9,11 +9,11 @@ on:
       candidate_limit:
         description: "候选 IP 上限"
         required: false
-        default: "40"
+        default: "60"
       per_group_limit:
         description: "每组实测 IP 上限"
         required: false
-        default: "18"
+        default: "12"
       max_count:
         description: "每个 txt 最多保留数量"
         required: false
@@ -50,7 +50,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests beautifulsoup4 lxml
+
+      - name: Refresh candidate IP list
+        env:
+          PYTHONIOENCODING: "utf-8"
+          LC_ALL: "C.UTF-8"
+          LANG: "C.UTF-8"
+        run: |
+          timeout 600 python collect_ips.py || echo "collect_ips.py failed, continue with existing candidate files"
 
       - name: Run carrier selector
         env:
